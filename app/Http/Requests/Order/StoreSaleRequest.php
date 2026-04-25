@@ -20,6 +20,7 @@ class StoreSaleRequest extends FormRequest
         return [
             'customer_name' => ['nullable', 'string', 'max:255'],
             'sale_date' => ['nullable', 'date'],
+            'warehouse_id' => ['required', 'uuid', Rule::exists('warehouses', 'id')],
             'items' => ['required', 'array', 'min:1'],
             'items.*.variant_id' => ['required', 'uuid', Rule::exists('product_variants', 'id')],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],

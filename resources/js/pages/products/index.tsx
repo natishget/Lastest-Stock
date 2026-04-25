@@ -13,22 +13,28 @@ import { FormEventHandler, useMemo, useState } from 'react';
 
 type Origin = 'LOCAL' | 'IMPORTED';
 
-interface ManagedProduct {
+interface ProductOption {
     id: string;
     name: string;
     base_unit: string | null;
-    variant_count: number;
-    origins: string[];
-    colors: string[];
-    skus: string[];
-    thicknesses: string[];
-    sizes: string[];
+}
+
+interface ManagedVariant {
+    id: string;
+    product_id: string;
+    product_name: string | null;
+    base_unit: string | null;
+    origin: Origin | null;
+    color: string | null;
+    sku: string | null;
+    thickness: string | null;
+    size: string | null;
     created_at: string;
 }
 
 interface ProductsPageProps {
-    products: {
-        data: ManagedProduct[];
+    variants: {
+        data: ManagedVariant[];
         current_page: number;
         last_page: number;
         per_page: number;
@@ -39,6 +45,7 @@ interface ProductsPageProps {
         origin: '' | Origin;
         color: string;
     };
+    productOptions: ProductOption[];
     origins: Origin[];
     colors: string[];
 }
@@ -49,6 +56,7 @@ interface ProductFormData {
 }
 
 interface VariantFormData {
+    product_id: string;
     color: string;
     origin: '' | Origin;
     sku: string;
@@ -63,12 +71,8 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-function formatValues(values: string[]): string {
-    if (values.length === 0) {
-        return '-';
-    }
-
-    return values.join(', ');
+function formatValue(value: string | null): string {
+    return value && value.trim() !== '' ? value : '-';
 }
 
 function ValueBadges({ values }: { values: string[] }) {
@@ -87,26 +91,20 @@ function ValueBadges({ values }: { values: string[] }) {
     );
 }
 
-export default function ProductManagementPage({ products, filters, origins, colors }: ProductsPageProps) {
+export default function ProductManagementPage({ variants, filters, productOptions, origins, colors }: ProductsPageProps) {
     const [searchTerm, setSearchTerm] = useState(filters.search ?? '');
     const [originFilter, setOriginFilter] = useState<Origin | ''>(filters.origin ?? '');
     const [colorFilter, setColorFilter] = useState(filters.color ?? '');
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-    const [editingProduct, setEditingProduct] = useState<ManagedProduct | null>(null);
-    const [variantProduct, setVariantProduct] = useState<ManagedProduct | null>(null);
-    const [deletingProduct, setDeletingProduct] = useState<ManagedProduct | null>(null);
+    const [isVariantDialogOpen, setIsVariantDialogOpen] = useState(false);
 
     const createForm = useForm<ProductFormData>({
         name: '',
         base_unit: '',
     });
 
-    const editForm = useForm<ProductFormData>({
-        name: '',
-        base_unit: '',
-    });
-
     const variantForm = useForm<VariantFormData>({
+        product_id: '',
         color: '',
         origin: '',
         sku: '',
@@ -114,7 +112,7 @@ export default function ProductManagementPage({ products, filters, origins, colo
         size: '',
     });
 
-    const searchProducts: FormEventHandler = (event) => {
+    const searchVariants: FormEventHandler = (event) => {
         event.preventDefault();
 
         router.get(
@@ -141,7 +139,7 @@ export default function ProductManagementPage({ products, filters, origins, colo
     };
 
     const goToPage = (page: number) => {
-        if (page < 1 || page > products.last_page) {
+        if (page < 1 || page > variants.last_page) {
             return;
         }
 
@@ -169,70 +167,25 @@ export default function ProductManagementPage({ products, filters, origins, colo
         });
     };
 
-    const openEditDialog = (product: ManagedProduct) => {
-        setEditingProduct(product);
-        editForm.clearErrors();
-        editForm.setData({
-            name: product.name,
-            base_unit: product.base_unit ?? '',
-        });
-    };
-
-    const submitEdit: FormEventHandler = (event) => {
-        event.preventDefault();
-
-        if (!editingProduct) {
-            return;
-        }
-
-        editForm.put(route('products.update', editingProduct.id), {
-            preserveScroll: true,
-            onSuccess: () => {
-                setEditingProduct(null);
-                editForm.clearErrors();
-            },
-        });
-    };
-
-    const openVariantDialog = (product: ManagedProduct) => {
-        setVariantProduct(product);
-        variantForm.clearErrors();
-        variantForm.reset();
-    };
-
     const submitVariant: FormEventHandler = (event) => {
         event.preventDefault();
 
-        if (!variantProduct) {
-            return;
-        }
-
-        variantForm.post(route('products.variants.store', variantProduct.id), {
+        variantForm.post(route('products.variants.store'), {
             preserveScroll: true,
             onSuccess: () => {
-                setVariantProduct(null);
                 variantForm.reset();
                 variantForm.clearErrors();
+                setIsVariantDialogOpen(false);
             },
         });
     };
 
-    const confirmDelete = () => {
-        if (!deletingProduct) {
-            return;
-        }
-
-        router.delete(route('products.destroy', deletingProduct.id), {
-            preserveScroll: true,
-            onSuccess: () => setDeletingProduct(null),
-        });
-    };
-
-    const resultStart = products.total === 0 ? 0 : (products.current_page - 1) * products.per_page + 1;
-    const resultEnd = Math.min(products.current_page * products.per_page, products.total);
+    const resultStart = variants.total === 0 ? 0 : (variants.current_page - 1) * variants.per_page + 1;
+    const resultEnd = Math.min(variants.current_page * variants.per_page, variants.total);
 
     const originOptions = useMemo(() => [...origins], [origins]);
     const colorOptions = useMemo(() => [...colors], [colors]);
+    const productOptionsMemo = useMemo(() => [...productOptions], [productOptions]);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -244,16 +197,21 @@ export default function ProductManagementPage({ products, filters, origins, colo
                         <div>
                             <h1 className="text-2xl font-semibold">Product Management</h1>
                             <p className="text-muted-foreground mt-1 text-sm">
-                                Manage products, review their variants, and filter by origin or color.
+                                Manage products, create variants, and review every variant as its own table row.
                             </p>
                         </div>
 
-                        <Button onClick={() => setIsCreateDialogOpen(true)}>Add Product</Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Button onClick={() => setIsCreateDialogOpen(true)}>Add Product</Button>
+                            <Button variant="secondary" onClick={() => setIsVariantDialogOpen(true)}>
+                                Add Product Variant
+                            </Button>
+                        </div>
                     </div>
 
-                    <form onSubmit={searchProducts} className="mt-6 grid gap-3 md:grid-cols-[1fr_180px_180px_auto_auto]">
+                    <form onSubmit={searchVariants} className="mt-6 grid gap-3 md:grid-cols-[1fr_180px_180px_auto_auto]">
                         <div className="grid gap-2">
-                            <Label htmlFor="search">Search by name</Label>
+                            <Label htmlFor="search">Search by product or SKU</Label>
                             <div className="relative">
                                 <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
                                 <Input
@@ -261,7 +219,7 @@ export default function ProductManagementPage({ products, filters, origins, colo
                                     value={searchTerm}
                                     onChange={(event) => setSearchTerm(event.target.value)}
                                     className="pl-9"
-                                    placeholder="Search products"
+                                    placeholder="Search variants"
                                 />
                             </div>
                         </div>
@@ -317,63 +275,48 @@ export default function ProductManagementPage({ products, filters, origins, colo
                         <table className="w-full text-sm">
                             <thead className="bg-muted/40">
                                 <tr>
-                                    <th className="px-4 py-3 text-left font-medium">Name</th>
+                                    <th className="px-4 py-3 text-left font-medium">Product</th>
                                     <th className="px-4 py-3 text-left font-medium">Base Unit</th>
-                                    <th className="px-4 py-3 text-left font-medium">Variants</th>
                                     <th className="px-4 py-3 text-left font-medium">Origin</th>
                                     <th className="px-4 py-3 text-left font-medium">Color</th>
                                     <th className="px-4 py-3 text-left font-medium">SKU</th>
                                     <th className="px-4 py-3 text-left font-medium">Thickness</th>
                                     <th className="px-4 py-3 text-left font-medium">Size</th>
                                     <th className="px-4 py-3 text-left font-medium">Created</th>
-                                    <th className="px-4 py-3 text-right font-medium">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {products.data.length === 0 ? (
+                                {variants.data.length === 0 ? (
                                     <tr>
-                                        <td colSpan={10} className="text-muted-foreground px-4 py-8 text-center">
-                                            No products found.
+                                        <td colSpan={8} className="text-muted-foreground px-4 py-8 text-center">
+                                            No product variants found.
                                         </td>
                                     </tr>
                                 ) : (
-                                    products.data.map((product) => (
-                                        <tr key={product.id} className="border-t align-top">
-                                            <td className="px-4 py-3 font-medium">{product.name}</td>
-                                            <td className="px-4 py-3">{product.base_unit ?? '-'}</td>
+                                    variants.data.map((variant) => (
+                                        <tr key={variant.id} className="border-t align-top">
+                                            <td className="px-4 py-3 font-medium">
+                                                <div className="space-y-1">
+                                                    <div>{variant.product_name ?? '-'}</div>
+                                                    <div className="text-muted-foreground text-xs">Variant ID: {variant.id}</div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">{formatValue(variant.base_unit)}</td>
                                             <td className="px-4 py-3">
                                                 <Badge variant="outline" className="rounded-md px-2.5 py-0.5 text-[11px]">
-                                                    {product.variant_count} total
+                                                    {variant.origin ?? '-'}
                                                 </Badge>
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <ValueBadges values={product.origins} />
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <ValueBadges values={product.colors} />
-                                            </td>
-                                            <td className="px-4 py-3">{formatValues(product.skus)}</td>
-                                            <td className="px-4 py-3">{formatValues(product.thicknesses)}</td>
-                                            <td className="px-4 py-3">{formatValues(product.sizes)}</td>
+                                            <td className="px-4 py-3">{formatValue(variant.color)}</td>
+                                            <td className="px-4 py-3">{formatValue(variant.sku)}</td>
+                                            <td className="px-4 py-3">{formatValue(variant.thickness)}</td>
+                                            <td className="px-4 py-3">{formatValue(variant.size)}</td>
                                             <td className="px-4 py-3 whitespace-nowrap">
-                                                {new Date(product.created_at).toLocaleDateString(undefined, {
+                                                {new Date(variant.created_at).toLocaleDateString(undefined, {
                                                     year: 'numeric',
                                                     month: 'short',
                                                     day: 'numeric',
                                                 })}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex justify-end gap-2">
-                                                    <Button type="button" variant="secondary" size="sm" onClick={() => openVariantDialog(product)}>
-                                                        Add Variant
-                                                    </Button>
-                                                    <Button type="button" variant="outline" size="sm" onClick={() => openEditDialog(product)}>
-                                                        Edit
-                                                    </Button>
-                                                    <Button type="button" variant="destructive" size="sm" onClick={() => setDeletingProduct(product)}>
-                                                        Delete
-                                                    </Button>
-                                                </div>
                                             </td>
                                         </tr>
                                     ))
@@ -385,23 +328,23 @@ export default function ProductManagementPage({ products, filters, origins, colo
 
                 <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                     <p className="text-muted-foreground text-sm">
-                        Showing {resultStart}-{resultEnd} of {products.total}
+                        Showing {resultStart}-{resultEnd} of {variants.total}
                     </p>
 
                     <div className="flex gap-2">
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => goToPage(products.current_page - 1)}
-                            disabled={products.current_page <= 1}
+                            onClick={() => goToPage(variants.current_page - 1)}
+                            disabled={variants.current_page <= 1}
                         >
                             Previous
                         </Button>
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => goToPage(products.current_page + 1)}
-                            disabled={products.current_page >= products.last_page}
+                            onClick={() => goToPage(variants.current_page + 1)}
+                            disabled={variants.current_page >= variants.last_page}
                         >
                             Next
                         </Button>
@@ -454,59 +397,35 @@ export default function ProductManagementPage({ products, filters, origins, colo
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={!!editingProduct} onOpenChange={(open) => !open && setEditingProduct(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Edit Product</DialogTitle>
-                        <DialogDescription>Update the product name and base unit.</DialogDescription>
-                    </DialogHeader>
-
-                    <form className="space-y-4" onSubmit={submitEdit}>
-                        <div className="grid gap-2">
-                            <Label htmlFor="edit-name">Name</Label>
-                            <Input
-                                id="edit-name"
-                                value={editForm.data.name}
-                                onChange={(event) => editForm.setData('name', event.target.value)}
-                                required
-                            />
-                            <InputError message={editForm.errors.name} />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="edit-base-unit">Base Unit</Label>
-                            <Input
-                                id="edit-base-unit"
-                                value={editForm.data.base_unit}
-                                onChange={(event) => editForm.setData('base_unit', event.target.value)}
-                                placeholder="Piece, meter, box..."
-                            />
-                            <InputError message={editForm.errors.base_unit} />
-                        </div>
-
-                        <DialogFooter>
-                            <DialogClose asChild>
-                                <Button type="button" variant="secondary">
-                                    Cancel
-                                </Button>
-                            </DialogClose>
-                            <Button type="submit" disabled={editForm.processing}>
-                                {editForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                                Update Product
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={!!variantProduct} onOpenChange={(open) => !open && setVariantProduct(null)}>
+            <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Add Product Variant</DialogTitle>
-                        <DialogDescription>Add a new variant for {variantProduct?.name}.</DialogDescription>
+                        <DialogDescription>Select a product and define the variant details.</DialogDescription>
                     </DialogHeader>
 
                     <form className="space-y-4" onSubmit={submitVariant}>
+                        <div className="grid gap-2">
+                            <Label htmlFor="variant-product">Product</Label>
+                            <Select
+                                value={variantForm.data.product_id || '__none'}
+                                onValueChange={(value) => variantForm.setData('product_id', value === '__none' ? '' : value)}
+                            >
+                                <SelectTrigger id="variant-product">
+                                    <SelectValue placeholder="Select product" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="__none">Select product</SelectItem>
+                                    {productOptionsMemo.map((product) => (
+                                        <SelectItem key={product.id} value={product.id}>
+                                            {product.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <InputError message={variantForm.errors.product_id} />
+                        </div>
+
                         <div className="grid gap-2">
                             <Label htmlFor="variant-origin">Origin</Label>
                             <Select
@@ -586,26 +505,6 @@ export default function ProductManagementPage({ products, filters, origins, colo
                             </Button>
                         </DialogFooter>
                     </form>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={!!deletingProduct} onOpenChange={(open) => !open && setDeletingProduct(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete Product</DialogTitle>
-                        <DialogDescription>Are you sure you want to delete {deletingProduct?.name}? This action cannot be undone.</DialogDescription>
-                    </DialogHeader>
-
-                    <DialogFooter>
-                        <DialogClose asChild>
-                            <Button type="button" variant="secondary">
-                                Cancel
-                            </Button>
-                        </DialogClose>
-                        <Button type="button" variant="destructive" onClick={confirmDelete}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </AppLayout>

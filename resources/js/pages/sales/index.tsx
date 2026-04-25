@@ -16,6 +16,11 @@ interface VariantOption {
     label: string;
 }
 
+interface WarehouseOption {
+    id: string;
+    name: string;
+}
+
 interface SaleItemFormRow {
     variant_id: string;
     quantity: string;
@@ -49,11 +54,13 @@ interface SalesPageProps {
     };
     variantOptions: VariantOption[];
     availableQuantities: Record<string, string>;
+    warehouses: WarehouseOption[];
 }
 
 interface SaleFormData {
     customer_name: string;
     sale_date: string;
+    warehouse_id: string;
     items: SaleItemFormRow[];
 }
 
@@ -70,12 +77,13 @@ const emptyRow = (): SaleItemFormRow => ({
     selling_price: '',
 });
 
-export default function SalesIndex({ sales, variantOptions, availableQuantities }: SalesPageProps) {
+export default function SalesIndex({ sales, variantOptions, availableQuantities, warehouses }: SalesPageProps) {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm<SaleFormData>({
         customer_name: '',
         sale_date: new Date().toISOString().slice(0, 10),
+        warehouse_id: '',
         items: [emptyRow()],
     });
 
@@ -110,6 +118,7 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities 
                 reset();
                 clearErrors();
                 setData('sale_date', new Date().toISOString().slice(0, 10));
+                setData('warehouse_id', '');
                 setData('items', [emptyRow()]);
                 setIsCreateDialogOpen(false);
             },
@@ -120,6 +129,15 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities 
     const resultEnd = Math.min(sales.current_page * sales.per_page, sales.total);
 
     const variantOptionsMemo = useMemo(() => variantOptions, [variantOptions]);
+    const warehouseOptionsMemo = useMemo(() => warehouses, [warehouses]);
+
+    const availableFor = (warehouseId: string, variantId: string): string => {
+        if (!warehouseId || !variantId) {
+            return '0';
+        }
+
+        return availableQuantities[`${warehouseId}:${variantId}`] ?? '0';
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -195,7 +213,7 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities 
                     </DialogHeader>
 
                     <form className="space-y-4" onSubmit={submit}>
-                        <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-4 md:grid-cols-3">
                             <div className="grid gap-2">
                                 <Label htmlFor="customer_name">Customer Name</Label>
                                 <Input
@@ -215,6 +233,27 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities 
                                     onChange={(event) => setData('sale_date', event.target.value)}
                                 />
                                 <InputError message={groupedErrors.sale_date} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label>Warehouse</Label>
+                                <Select
+                                    value={data.warehouse_id || '__none'}
+                                    onValueChange={(value) => setData('warehouse_id', value === '__none' ? '' : value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select warehouse" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none">Select warehouse</SelectItem>
+                                        {warehouseOptionsMemo.map((warehouse) => (
+                                            <SelectItem key={warehouse.id} value={warehouse.id}>
+                                                {warehouse.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={groupedErrors.warehouse_id} />
                             </div>
                         </div>
 
@@ -246,7 +285,7 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities 
                                                 ))}
                                             </SelectContent>
                                         </Select>
-                                        <p className="text-muted-foreground text-xs">Available: {availableQuantities[item.variant_id] ?? '0'}</p>
+                                        <p className="text-muted-foreground text-xs">Available: {availableFor(data.warehouse_id, item.variant_id)}</p>
                                         <InputError message={groupedErrors[`items.${index}.variant_id`]} />
                                     </div>
 

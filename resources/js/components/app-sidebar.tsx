@@ -4,7 +4,7 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid, Package, ReceiptText, ShoppingCart, Users } from 'lucide-react';
+import { BarChart3, BookOpen, Folder, LayoutGrid, Package, ReceiptText, ShoppingCart, Users, Warehouse } from 'lucide-react';
 import AppLogo from './app-logo';
 
 const footerNavItems: NavItem[] = [
@@ -41,6 +41,11 @@ export function AppSidebar() {
                       url: '/users',
                       icon: Users,
                   },
+                  {
+                      title: 'Warehouses',
+                      url: '/warehouses',
+                      icon: Warehouse,
+                  },
               ]
             : []),
         ...(auth.user.role === 'ADMIN' || auth.user.role === 'SALES'
@@ -54,6 +59,11 @@ export function AppSidebar() {
                       title: 'Sales',
                       url: '/sales',
                       icon: ShoppingCart,
+                  },
+                  {
+                      title: 'COGS',
+                      url: '/cogs',
+                      icon: BarChart3,
                   },
               ]
             : []),

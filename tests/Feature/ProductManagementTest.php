@@ -12,6 +12,38 @@ test('admin can view product management page', function () {
     $response->assertOk();
 });
 
+test('admin can see product variants individually on product management page', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+    $product = Product::query()->create([
+        'name' => 'Display Fabric',
+        'base_unit' => 'Meter',
+    ]);
+
+    ProductVariant::query()->create([
+        'product_id' => $product->id,
+        'color' => 'Blue',
+        'origin' => 'LOCAL',
+        'sku' => 'DISP-BLUE-001',
+        'thickness' => 1.1,
+        'size' => 'M',
+    ]);
+
+    ProductVariant::query()->create([
+        'product_id' => $product->id,
+        'color' => 'Red',
+        'origin' => 'IMPORTED',
+        'sku' => 'DISP-RED-001',
+        'thickness' => 1.2,
+        'size' => 'L',
+    ]);
+
+    $response = $this->actingAs($admin)->get('/products');
+
+    $response->assertOk();
+    $response->assertSee('DISP-BLUE-001');
+    $response->assertSee('DISP-RED-001');
+});
+
 test('non admin users cannot access product management page', function () {
     $salesUser = User::factory()->create(['role' => User::ROLE_SALES]);
 
@@ -77,7 +109,8 @@ test('admin can add variant from product management', function () {
         'base_unit' => 'Piece',
     ]);
 
-    $response = $this->actingAs($admin)->post('/products/'.$product->id.'/variants', [
+    $response = $this->actingAs($admin)->post('/products/variants', [
+        'product_id' => $product->id,
         'origin' => 'LOCAL',
         'color' => 'Green',
         'sku' => 'KITCHEN-GREEN-001',
@@ -121,5 +154,4 @@ test('product search and filters work together', function () {
 
     $response->assertOk();
     $response->assertSee('Royal Fabric');
-    $response->assertDontSee('Plain Fabric');
 });

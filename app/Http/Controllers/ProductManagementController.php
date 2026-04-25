@@ -21,48 +21,60 @@ class ProductManagementController extends Controller
         $origin = trim((string) $request->string('origin')->toString());
         $color = trim((string) $request->string('color')->toString());
 
-        $products = Product::query()
-            ->with(['variants'])
+        $variants = ProductVariant::query()
+            ->with(['product'])
+            ->select('product_variants.*')
+            ->join('products as product_names', 'product_names.id', '=', 'product_variants.product_id')
             ->when($search !== '', function ($query) use ($search): void {
-                $query->where('name', 'like', "%{$search}%");
+                $query->where(function ($variantQuery) use ($search): void {
+                    $variantQuery
+                        ->where('sku', 'like', "%{$search}%")
+                        ->orWhereHas('product', function ($productQuery) use ($search): void {
+                            $productQuery->where('name', 'like', "%{$search}%");
+                        });
+                });
             })
             ->when($origin !== '', function ($query) use ($origin): void {
-                $query->whereHas('variants', function ($variantQuery) use ($origin): void {
-                    $variantQuery->where('origin', $origin);
-                });
+                $query->where('origin', $origin);
             })
             ->when($color !== '', function ($query) use ($color): void {
-                $query->whereHas('variants', function ($variantQuery) use ($color): void {
-                    $variantQuery->where('color', $color);
-                });
+                $query->where('color', $color);
             })
-            ->orderBy('name')
+            ->orderBy('product_names.name')
+            ->orderBy('sku')
             ->paginate(10)
             ->withQueryString()
-            ->through(function (Product $product): array {
-                $variants = $product->variants;
-
+            ->through(function (ProductVariant $variant): array {
                 return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'base_unit' => $product->base_unit,
-                    'variant_count' => $variants->count(),
-                    'origins' => $variants->pluck('origin')->filter()->unique()->values()->all(),
-                    'colors' => $variants->pluck('color')->filter()->unique()->values()->all(),
-                    'skus' => $variants->pluck('sku')->filter()->unique()->values()->all(),
-                    'thicknesses' => $variants->pluck('thickness')->filter(static fn ($value): bool => $value !== null)->map(static fn ($value): string => (string) $value)->unique()->values()->all(),
-                    'sizes' => $variants->pluck('size')->filter()->unique()->values()->all(),
-                    'created_at' => $product->created_at,
+                    'id' => $variant->id,
+                    'product_id' => $variant->product_id,
+                    'product_name' => $variant->product?->name,
+                    'base_unit' => $variant->product?->base_unit,
+                    'origin' => $variant->origin,
+                    'color' => $variant->color,
+                    'sku' => $variant->sku,
+                    'thickness' => $variant->thickness !== null ? (string) $variant->thickness : null,
+                    'size' => $variant->size,
+                    'created_at' => $variant->created_at,
                 ];
             });
 
         return Inertia::render('products/index', [
-            'products' => $products,
+            'variants' => $variants,
             'filters' => [
                 'search' => $search,
                 'origin' => $origin,
                 'color' => $color,
             ],
+            'productOptions' => Product::query()
+                ->orderBy('name')
+                ->get(['id', 'name', 'base_unit'])
+                ->map(fn (Product $product): array => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'base_unit' => $product->base_unit,
+                ])
+                ->all(),
             'origins' => ProductVariant::query()
                 ->whereNotNull('origin')
                 ->distinct()
@@ -94,9 +106,18 @@ class ProductManagementController extends Controller
         return back()->with('success', 'Product updated successfully.');
     }
 
-    public function storeVariant(StoreProductVariantRequest $request, Product $product): RedirectResponse
+    public function storeVariant(StoreProductVariantRequest $request): RedirectResponse
     {
-        $product->variants()->create($request->validated());
+        $validated = $request->validated();
+
+        ProductVariant::query()->create([
+            'product_id' => $validated['product_id'],
+            'color' => $validated['color'] ?? null,
+            'origin' => $validated['origin'] ?? null,
+            'sku' => $validated['sku'] ?? null,
+            'thickness' => $validated['thickness'] ?? null,
+            'size' => $validated['size'] ?? null,
+        ]);
 
         return back()->with('success', 'Product variant created successfully.');
     }

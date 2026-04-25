@@ -16,6 +16,11 @@ interface VariantOption {
     label: string;
 }
 
+interface WarehouseOption {
+    id: string;
+    name: string;
+}
+
 interface PurchaseItemFormRow {
     variant_id: string;
     quantity: string;
@@ -49,12 +54,14 @@ interface PurchasesPageProps {
         total: number;
     };
     variantOptions: VariantOption[];
+    warehouses: WarehouseOption[];
 }
 
 interface PurchaseFormData {
     supplier_name: string;
     invoice_number: string;
     purchase_date: string;
+    warehouse_id: string;
     items: PurchaseItemFormRow[];
 }
 
@@ -71,13 +78,14 @@ const emptyRow = (): PurchaseItemFormRow => ({
     unit_cost: '',
 });
 
-export default function PurchasesIndex({ purchases, variantOptions }: PurchasesPageProps) {
+export default function PurchasesIndex({ purchases, variantOptions, warehouses }: PurchasesPageProps) {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm<PurchaseFormData>({
         supplier_name: '',
         invoice_number: '',
         purchase_date: new Date().toISOString().slice(0, 10),
+        warehouse_id: '',
         items: [emptyRow()],
     });
 
@@ -112,6 +120,7 @@ export default function PurchasesIndex({ purchases, variantOptions }: PurchasesP
                 reset();
                 clearErrors();
                 setData('purchase_date', new Date().toISOString().slice(0, 10));
+                setData('warehouse_id', '');
                 setData('items', [emptyRow()]);
                 setIsCreateDialogOpen(false);
             },
@@ -122,6 +131,7 @@ export default function PurchasesIndex({ purchases, variantOptions }: PurchasesP
     const resultEnd = Math.min(purchases.current_page * purchases.per_page, purchases.total);
 
     const variantOptionsMemo = useMemo(() => variantOptions, [variantOptions]);
+    const warehouseOptionsMemo = useMemo(() => warehouses, [warehouses]);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -199,7 +209,7 @@ export default function PurchasesIndex({ purchases, variantOptions }: PurchasesP
                     </DialogHeader>
 
                     <form className="space-y-4" onSubmit={submit}>
-                        <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="supplier_name">Supplier Name</Label>
                                 <Input
@@ -229,6 +239,27 @@ export default function PurchasesIndex({ purchases, variantOptions }: PurchasesP
                                     onChange={(event) => setData('purchase_date', event.target.value)}
                                 />
                                 <InputError message={groupedErrors.purchase_date} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label>Warehouse</Label>
+                                <Select
+                                    value={data.warehouse_id || '__none'}
+                                    onValueChange={(value) => setData('warehouse_id', value === '__none' ? '' : value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select warehouse" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none">Select warehouse</SelectItem>
+                                        {warehouseOptionsMemo.map((warehouse) => (
+                                            <SelectItem key={warehouse.id} value={warehouse.id}>
+                                                {warehouse.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={groupedErrors.warehouse_id} />
                             </div>
                         </div>
 

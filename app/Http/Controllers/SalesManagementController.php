@@ -3,22 +3,24 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Order\StoreSaleRequest;
-use App\Models\CogsEntry;
 use App\Models\InventoryCostLayer;
 use App\Models\InventoryTransaction;
 use App\Models\ProductVariant;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Models\Warehouse;
+use App\Services\CostingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SalesManagementController extends Controller
 {
+    public function __construct(private readonly CostingService $costingService) {}
+
     public function index(Request $request): Response
     {
         $this->authorizeManagementAccess($request);
@@ -49,6 +51,7 @@ class SalesManagementController extends Controller
             'sales' => $sales,
             'variantOptions' => $this->variantOptions(),
             'availableQuantities' => $this->availableQuantities(),
+            'warehouses' => $this->warehouseOptions(),
         ]);
     }
 
@@ -60,6 +63,8 @@ class SalesManagementController extends Controller
         $user = $request->user();
 
         DB::transaction(function () use ($validated, $user): void {
+            $warehouseId = $validated['warehouse_id'];
+
             $sale = Sale::query()->create([
                 'customer_name' => $validated['customer_name'] ?? null,
                 'sale_date' => $validated['sale_date'] ?? now()->toDateString(),
@@ -75,24 +80,6 @@ class SalesManagementController extends Controller
                 $sellingPrice = (float) $itemData['selling_price'];
                 $lineTotal = round($quantity * $sellingPrice, 2);
 
-                $remainingQuantity = $quantity;
-                $totalCost = 0.0;
-
-                $costLayers = InventoryCostLayer::query()
-                    ->where('variant_id', $variantId)
-                    ->where('remaining_qty', '>', 0)
-                    ->orderBy('created_at')
-                    ->lockForUpdate()
-                    ->get();
-
-                $availableQuantity = (float) $costLayers->sum('remaining_qty');
-
-                if ($availableQuantity < $quantity) {
-                    throw ValidationException::withMessages([
-                        'items' => 'Not enough available stock for one of the selected variants.',
-                    ]);
-                }
-
                 $saleItem = $sale->items()->create([
                     'variant_id' => $variantId,
                     'quantity' => $quantity,
@@ -100,37 +87,13 @@ class SalesManagementController extends Controller
                     'total_price' => $lineTotal,
                 ]);
 
-                foreach ($costLayers as $layer) {
-                    if ($remainingQuantity <= 0) {
-                        break;
-                    }
-
-                    $consumedQuantity = min((float) $layer->remaining_qty, $remainingQuantity);
-                    $layerCost = round($consumedQuantity * (float) $layer->unit_cost, 2);
-
-                    CogsEntry::query()->create([
-                        'sale_item_id' => $saleItem->id,
-                        'variant_id' => $variantId,
-                        'quantity' => $consumedQuantity,
-                        'unit_cost' => $layer->unit_cost,
-                        'total_cost' => $layerCost,
-                        'costing_method' => 'FIFO',
-                        'source_layer_id' => $layer->id,
-                    ]);
-
-                    $layer->update([
-                        'remaining_qty' => (float) $layer->remaining_qty - $consumedQuantity,
-                    ]);
-
-                    $totalCost += $layerCost;
-                    $remainingQuantity -= $consumedQuantity;
-                }
+                $totalCost = $this->costingService->recordSaleItemCogs($saleItem, $warehouseId);
 
                 InventoryTransaction::query()->create([
                     'variant_id' => $variantId,
-                    'warehouse_id' => null,
+                    'warehouse_id' => $warehouseId,
                     'transaction_type' => 'SALE',
-                    'quantity' => $quantity,
+                    'quantity' => -$quantity,
                     'unit_cost' => $quantity > 0 ? round($totalCost / $quantity, 4) : 0,
                     'reference_type' => Sale::class,
                     'reference_id' => $sale->id,
@@ -169,10 +132,27 @@ class SalesManagementController extends Controller
     private function availableQuantities(): array
     {
         return InventoryCostLayer::query()
-            ->select('variant_id', DB::raw('COALESCE(SUM(remaining_qty), 0) as available_qty'))
-            ->groupBy('variant_id')
-            ->pluck('available_qty', 'variant_id')
+            ->selectRaw("CONCAT(warehouse_id, ':', variant_id) as warehouse_variant_key")
+            ->selectRaw('COALESCE(SUM(remaining_qty), 0) as available_qty')
+            ->whereNotNull('warehouse_id')
+            ->groupBy('warehouse_id', 'variant_id')
+            ->pluck('available_qty', 'warehouse_variant_key')
             ->map(fn ($quantity): string => (string) $quantity)
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function warehouseOptions(): array
+    {
+        return Warehouse::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Warehouse $warehouse): array => [
+                'id' => $warehouse->id,
+                'name' => $warehouse->name,
+            ])
             ->all();
     }
 

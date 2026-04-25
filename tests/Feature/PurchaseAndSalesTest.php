@@ -9,6 +9,7 @@ use App\Models\PurchaseItem;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Models\Warehouse;
 
 function createVariant(array $attributes = []): ProductVariant
 {
@@ -29,6 +30,10 @@ function createVariant(array $attributes = []): ProductVariant
 
 test('admin can create purchase with multiple items', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+    $warehouse = Warehouse::query()->create([
+        'name' => 'Main Warehouse',
+        'location' => 'HQ',
+    ]);
     $variantOne = createVariant(['sku' => 'PUR-001']);
     $variantTwo = createVariant(['sku' => 'PUR-002', 'color' => 'Red']);
 
@@ -36,6 +41,7 @@ test('admin can create purchase with multiple items', function () {
         'supplier_name' => 'Acme Supplies',
         'invoice_number' => 'INV-1001',
         'purchase_date' => '2026-04-22',
+        'warehouse_id' => $warehouse->id,
         'items' => [
             [
                 'variant_id' => $variantOne->id,
@@ -59,12 +65,17 @@ test('admin can create purchase with multiple items', function () {
 
 test('admin can create sale with multiple items and consume stock', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+    $warehouse = Warehouse::query()->create([
+        'name' => 'Main Warehouse',
+        'location' => 'HQ',
+    ]);
     $variantOne = createVariant(['sku' => 'SAL-001']);
     $variantTwo = createVariant(['sku' => 'SAL-002', 'color' => 'Red']);
 
     $this->actingAs($admin)->post('/purchases', [
         'supplier_name' => 'Acme Supplies',
         'purchase_date' => '2026-04-22',
+        'warehouse_id' => $warehouse->id,
         'items' => [
             [
                 'variant_id' => $variantOne->id,
@@ -82,6 +93,7 @@ test('admin can create sale with multiple items and consume stock', function () 
     $response = $this->actingAs($admin)->post('/sales', [
         'customer_name' => 'Retail Buyer',
         'sale_date' => '2026-04-22',
+        'warehouse_id' => $warehouse->id,
         'items' => [
             [
                 'variant_id' => $variantOne->id,
@@ -101,17 +113,22 @@ test('admin can create sale with multiple items and consume stock', function () 
     expect(Sale::query()->count())->toBe(1);
     expect(SaleItem::query()->count())->toBe(2);
     expect(CogsEntry::query()->count())->toBe(2);
-    expect(InventoryCostLayer::query()->where('variant_id', $variantOne->id)->sum('remaining_qty'))->toBe(7);
-    expect(InventoryCostLayer::query()->where('variant_id', $variantTwo->id)->sum('remaining_qty'))->toBe(4);
+    expect(InventoryCostLayer::query()->where('warehouse_id', $warehouse->id)->where('variant_id', $variantOne->id)->sum('remaining_qty'))->toBe(7);
+    expect(InventoryCostLayer::query()->where('warehouse_id', $warehouse->id)->where('variant_id', $variantTwo->id)->sum('remaining_qty'))->toBe(4);
 });
 
 test('sale is blocked when stock is insufficient', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+    $warehouse = Warehouse::query()->create([
+        'name' => 'Main Warehouse',
+        'location' => 'HQ',
+    ]);
     $variant = createVariant(['sku' => 'SAL-003']);
 
     $this->actingAs($admin)->post('/purchases', [
         'supplier_name' => 'Acme Supplies',
         'purchase_date' => '2026-04-22',
+        'warehouse_id' => $warehouse->id,
         'items' => [
             [
                 'variant_id' => $variant->id,
@@ -124,6 +141,7 @@ test('sale is blocked when stock is insufficient', function () {
     $response = $this->actingAs($admin)->post('/sales', [
         'customer_name' => 'Retail Buyer',
         'sale_date' => '2026-04-22',
+        'warehouse_id' => $warehouse->id,
         'items' => [
             [
                 'variant_id' => $variant->id,

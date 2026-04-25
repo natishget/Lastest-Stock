@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Order\StorePurchaseRequest;
-use App\Models\InventoryCostLayer;
 use App\Models\InventoryTransaction;
 use App\Models\ProductVariant;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\User;
+use App\Models\Warehouse;
+use App\Services\CostingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,8 @@ use Inertia\Response;
 
 class PurchaseManagementController extends Controller
 {
+    public function __construct(private readonly CostingService $costingService) {}
+
     public function index(Request $request): Response
     {
         $this->authorizeManagementAccess($request);
@@ -47,6 +50,7 @@ class PurchaseManagementController extends Controller
         return Inertia::render('purchases/index', [
             'purchases' => $purchases,
             'variantOptions' => $this->variantOptions(),
+            'warehouses' => $this->warehouseOptions(),
         ]);
     }
 
@@ -59,6 +63,7 @@ class PurchaseManagementController extends Controller
 
         DB::transaction(function () use ($validated, $user): void {
             $totalAmount = 0.0;
+            $warehouseId = $validated['warehouse_id'];
 
             $purchase = Purchase::query()->create([
                 'supplier_name' => $validated['supplier_name'] ?? null,
@@ -83,7 +88,7 @@ class PurchaseManagementController extends Controller
 
                 InventoryTransaction::query()->create([
                     'variant_id' => $itemData['variant_id'],
-                    'warehouse_id' => null,
+                    'warehouse_id' => $warehouseId,
                     'transaction_type' => 'PURCHASE',
                     'quantity' => $quantity,
                     'unit_cost' => $unitCost,
@@ -93,13 +98,7 @@ class PurchaseManagementController extends Controller
                     'created_by' => $user?->id,
                 ]);
 
-                InventoryCostLayer::query()->create([
-                    'variant_id' => $itemData['variant_id'],
-                    'warehouse_id' => null,
-                    'remaining_qty' => $quantity,
-                    'unit_cost' => $unitCost,
-                    'source_transaction_id' => $purchaseItem->id,
-                ]);
+                $this->costingService->recordPurchase($itemData['variant_id'], $warehouseId, $quantity, $unitCost);
             }
 
             $purchase->update(['total_amount' => $totalAmount]);
@@ -120,6 +119,21 @@ class PurchaseManagementController extends Controller
             ->map(fn (ProductVariant $variant): array => [
                 'id' => $variant->id,
                 'label' => $this->variantLabel($variant),
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function warehouseOptions(): array
+    {
+        return Warehouse::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Warehouse $warehouse): array => [
+                'id' => $warehouse->id,
+                'name' => $warehouse->name,
             ])
             ->all();
     }
