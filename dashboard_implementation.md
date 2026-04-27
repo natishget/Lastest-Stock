@@ -4,22 +4,22 @@
 
 This is a **financially accurate inventory system** built with:
 
-* Laravel (Backend)
-* React (Frontend)
-* MySQL
-* UUID (CHAR(36))
+- Laravel (Backend)
+- React (Frontend)
+- MySQL
+- UUID (CHAR(36))
 
 The system uses:
 
-* `sale_items` → Revenue source
-* `cogs_entries` → COGS source
-* `sales.sale_date` → date reference
-* `product_variants` → product tracking
+- `sale_items` → Revenue source
+- `cogs_entries` → COGS source
+- `sales.sale_date` → date reference
+- `product_variants` → product tracking
 
 ⚠️ Important:
 
-* Do NOT calculate COGS dynamically from inventory
-* Always use `cogs_entries` for financial reporting
+- Do NOT calculate COGS dynamically from inventory
+- Always use `cogs_entries` for financial reporting
 
 ---
 
@@ -29,13 +29,13 @@ Implement a **Dashboard Page** that includes:
 
 ### 1. 📈 Line Chart (12 Months)
 
-* Revenue
-* COGS
-* Gross Profit
+- Revenue
+- COGS
+- Gross Profit
 
 ### 2. 📊 Horizontal Bar Chart
 
-* Top 10–15 product variants by sales
+- Top 10–15 product variants by sales
 
 ---
 
@@ -47,7 +47,7 @@ The system uses Ethiopian fiscal year:
 
 Example:
 
-* 2025 Fiscal Year = July 1, 2025 → June 30, 2026
+- 2025 Fiscal Year = July 1, 2025 → June 30, 2026
 
 ---
 
@@ -81,14 +81,14 @@ End:
 
 ### Query Params:
 
-* fiscal_year (e.g., 2025)
+- fiscal_year (e.g., 2025)
 
 ---
 
 ## 3. SQL Logic (Monthly Aggregation)
 
 ```sql id="m8o4yl"
-SELECT 
+SELECT
     DATE_FORMAT(s.sale_date, '%Y-%m') AS month,
 
     SUM(si.total_price) AS revenue,
@@ -131,15 +131,15 @@ Example output:
 
 Params:
 
-* fiscal_year
-* limit (default 10–15)
+- fiscal_year
+- limit (default 10–15)
 
 ---
 
 ## SQL
 
 ```sql id="g7r8jk"
-SELECT 
+SELECT
     pv.id,
     p.name,
     pv.color,
@@ -165,17 +165,17 @@ LIMIT ?;
 
 # ⚡ PERFORMANCE REQUIREMENTS
 
-* Add indexes on:
+- Add indexes on:
 
-  * sales.sale_date
-  * sale_items.variant_id
-  * cogs_entries.sale_item_id
+    - sales.sale_date
+    - sale_items.variant_id
+    - cogs_entries.sale_item_id
 
-* Avoid recalculating COGS
+- Avoid recalculating COGS
 
-* Use aggregation queries only
+- Use aggregation queries only
 
-* Optionally cache results (Redis)
+- Optionally cache results (Redis)
 
 ---
 
@@ -191,12 +191,12 @@ Use library (Recharts or Chart.js)
 
 ### Data:
 
-* X-axis → Month
-* Y-axis:
+- X-axis → Month
+- Y-axis:
 
-  * Revenue
-  * COGS
-  * Gross Profit
+    - Revenue
+    - COGS
+    - Gross Profit
 
 ---
 
@@ -204,39 +204,39 @@ Use library (Recharts or Chart.js)
 
 ### Y-axis:
 
-* Product Variant Name:
+- Product Variant Name:
   format:
   "Aluminum Panel - Blue - Imported"
 
 ### X-axis:
 
-* Quantity sold OR Revenue
+- Quantity sold OR Revenue
 
 ---
 
 ## 3. Controls
 
-* Fiscal Year Selector (dropdown)
-* Auto-load current fiscal year
+- Fiscal Year Selector (dropdown)
+- Auto-load current fiscal year
 
 ---
 
 ## 4. UX Requirements
 
-* Loading states
-* Smooth transitions
-* Tooltip with values
-* Legend for Revenue / COGS / Profit
+- Loading states
+- Smooth transitions
+- Tooltip with values
+- Legend for Revenue / COGS / Profit
 
 ---
 
 # ⚠️ CRITICAL RULES
 
-* Always use `sale_items` for revenue
-* Always use `cogs_entries` for COGS
-* Never compute cost from inventory directly
-* Always filter by `sales.sale_date`
-* Exclude VOIDED sales
+- Always use `sale_items` for revenue
+- Always use `cogs_entries` for COGS
+- Never compute cost from inventory directly
+- Always filter by `sales.sale_date`
+- Exclude VOIDED sales
 
 ---
 
@@ -244,17 +244,18 @@ Use library (Recharts or Chart.js)
 
 Copilot should generate:
 
-* DashboardController
-* 2 API endpoints:
+- DashboardController
+- 2 API endpoints:
 
-  * financials (monthly)
-  * top-products
-* Optimized SQL queries
-* React Dashboard page:
+    - financials (monthly)
+    - top-products
 
-  * Line chart (12 months)
-  * Horizontal bar chart (Top products)
-  * Fiscal year selector
+- Optimized SQL queries
+- React Dashboard page:
+
+    - Line chart (12 months)
+    - Horizontal bar chart (Top products)
+    - Fiscal year selector
 
 ---
 
@@ -262,9 +263,9 @@ Copilot should generate:
 
 Follow strictly:
 
-* Ethiopian fiscal year logic
-* Ledger-based accounting
-* Stored COGS (not recalculated)
-* Performance optimized queries
+- Ethiopian fiscal year logic
+- Ledger-based accounting
+- Stored COGS (not recalculated)
+- Performance optimized queries
 
 Do NOT simplify logic.

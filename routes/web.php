@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CogsController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductManagementController;
 use App\Http\Controllers\PurchaseManagementController;
 use App\Http\Controllers\SalesManagementController;
@@ -14,9 +15,9 @@ Route::get('/', function () {
 })->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', function () {
-        return Inertia::render('dashboard');
-    })->name('dashboard');
+    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('dashboard/financials', [DashboardController::class, 'financials'])->name('dashboard.web-financials');
+    Route::get('dashboard/top-products', [DashboardController::class, 'topProducts'])->name('dashboard.web-top-products');
 
     Route::get('cogs', [CogsController::class, 'index'])->name('cogs.index');
     Route::get('cogs/report', [CogsController::class, 'report'])->name('cogs.web-report');
