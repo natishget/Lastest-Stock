@@ -15,10 +15,22 @@ class Sale extends Model
 
     protected $keyType = 'string';
 
+    public const STATUS_POSTED = 'POSTED';
+
+    public const STATUS_VOIDED = 'VOIDED';
+
+    public const REFERENCE_VOID = 'VOID';
+
+    public const REFERENCE_RETURN = 'RETURN';
+
     protected $fillable = [
         'customer_name',
         'total_amount',
         'sale_date',
+        'status',
+        'reference_type',
+        'reference_id',
+        'notes',
         'created_by',
     ];
 

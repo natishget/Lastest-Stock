@@ -2,23 +2,29 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Order\CreatePurchaseReturnRequest;
 use App\Http\Requests\Order\StorePurchaseRequest;
+use App\Http\Requests\Order\UpdatePurchaseRequest;
+use App\Http\Requests\Order\VoidTransactionRequest;
 use App\Models\InventoryTransaction;
 use App\Models\ProductVariant;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\User;
 use App\Models\Warehouse;
-use App\Services\CostingService;
+use App\Services\CorrectionService;
+use App\Services\PurchaseService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PurchaseManagementController extends Controller
 {
-    public function __construct(private readonly CostingService $costingService) {}
+    public function __construct(
+        private readonly PurchaseService $purchaseService,
+        private readonly CorrectionService $correctionService,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -35,6 +41,9 @@ class PurchaseManagementController extends Controller
                 'invoice_number' => $purchase->invoice_number,
                 'purchase_date' => $purchase->purchase_date,
                 'total_amount' => $purchase->total_amount,
+                'status' => $purchase->status ?? Purchase::STATUS_POSTED,
+                'notes' => $purchase->notes,
+                'warehouse_id' => $this->resolvePurchaseWarehouse($purchase),
                 'item_count' => $purchase->items->count(),
                 'items' => $purchase->items->map(fn (PurchaseItem $item): array => [
                     'variant_id' => $item->variant_id,
@@ -58,53 +67,52 @@ class PurchaseManagementController extends Controller
     {
         $this->authorizeManagementAccess($request);
 
-        $validated = $request->validated();
-        $user = $request->user();
-
-        DB::transaction(function () use ($validated, $user): void {
-            $totalAmount = 0.0;
-            $warehouseId = $validated['warehouse_id'];
-
-            $purchase = Purchase::query()->create([
-                'supplier_name' => $validated['supplier_name'] ?? null,
-                'invoice_number' => $validated['invoice_number'] ?? null,
-                'purchase_date' => $validated['purchase_date'] ?? now()->toDateString(),
-                'created_by' => $user?->id,
-                'total_amount' => 0,
-            ]);
-
-            foreach ($validated['items'] as $itemData) {
-                $quantity = (float) $itemData['quantity'];
-                $unitCost = (float) $itemData['unit_cost'];
-                $lineTotal = round($quantity * $unitCost, 2);
-                $totalAmount += $lineTotal;
-
-                $purchaseItem = $purchase->items()->create([
-                    'variant_id' => $itemData['variant_id'],
-                    'quantity' => $quantity,
-                    'unit_cost' => $unitCost,
-                    'total_cost' => $lineTotal,
-                ]);
-
-                InventoryTransaction::query()->create([
-                    'variant_id' => $itemData['variant_id'],
-                    'warehouse_id' => $warehouseId,
-                    'transaction_type' => 'PURCHASE',
-                    'quantity' => $quantity,
-                    'unit_cost' => $unitCost,
-                    'reference_type' => Purchase::class,
-                    'reference_id' => $purchase->id,
-                    'transaction_date' => $validated['purchase_date'] ?? now()->toDateString(),
-                    'created_by' => $user?->id,
-                ]);
-
-                $this->costingService->recordPurchase($itemData['variant_id'], $warehouseId, $quantity, $unitCost);
-            }
-
-            $purchase->update(['total_amount' => $totalAmount]);
-        });
+        $this->purchaseService->createPurchase($request->validated(), $request->user());
 
         return back()->with('success', 'Purchase created successfully.');
+    }
+
+    public function update(UpdatePurchaseRequest $request, Purchase $purchase): RedirectResponse
+    {
+        $this->authorizeManagementAccess($request);
+
+        $this->purchaseService->updateMetadata($purchase, $request->validated());
+
+        return back()->with('success', 'Purchase details updated successfully.');
+    }
+
+    public function void(VoidTransactionRequest $request, Purchase $purchase): RedirectResponse
+    {
+        $this->authorizeManagementAccess($request);
+
+        $validated = $request->validated();
+
+        $this->correctionService->voidPurchase(
+            purchaseId: $purchase->id,
+            userId: $request->user()?->id,
+            reason: $validated['reason'] ?? null,
+            voidDate: $validated['void_date'] ?? null,
+        );
+
+        return back()->with('success', 'Purchase voided successfully using reversal entries.');
+    }
+
+    public function returnItems(CreatePurchaseReturnRequest $request, Purchase $purchase): RedirectResponse
+    {
+        $this->authorizeManagementAccess($request);
+
+        $validated = $request->validated();
+
+        $this->correctionService->returnPurchase(
+            purchaseId: $purchase->id,
+            warehouseId: (string) $validated['warehouse_id'],
+            items: $validated['items'],
+            userId: $request->user()?->id,
+            notes: $validated['notes'] ?? null,
+            returnDate: $validated['return_date'] ?? null,
+        );
+
+        return back()->with('success', 'Purchase return recorded successfully.');
     }
 
     /**
@@ -161,5 +169,14 @@ class PurchaseManagementController extends Controller
             in_array($request->user()?->role, [User::ROLE_ADMIN, User::ROLE_SALES], true),
             403,
         );
+    }
+
+    private function resolvePurchaseWarehouse(Purchase $purchase): ?string
+    {
+        return InventoryTransaction::query()
+            ->where('reference_type', Purchase::class)
+            ->where('reference_id', $purchase->id)
+            ->where('transaction_type', 'PURCHASE')
+            ->value('warehouse_id');
     }
 }

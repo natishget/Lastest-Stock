@@ -4,16 +4,16 @@
 
 You are working on a **financially accurate inventory system** built with:
 
-* Laravel (Backend)
-* React (Frontend)
-* MySQL (Database)
-* UUID (CHAR(36)) primary keys
+- Laravel (Backend)
+- React (Frontend)
+- MySQL (Database)
+- UUID (CHAR(36)) primary keys
 
 The system is **ledger-based**:
 
-* Inventory is derived from `inventory_transactions`
-* Products are handled via `product_variants`
-* COGS must be stored in `cogs_entries` (NOT calculated on the fly for historical data)
+- Inventory is derived from `inventory_transactions`
+- Products are handled via `product_variants`
+- COGS must be stored in `cogs_entries` (NOT calculated on the fly for historical data)
 
 ---
 
@@ -24,26 +24,28 @@ Implement a **COGS Calculation Module + Page** that:
 1. Calculates **COGS per product variant**
 2. Supports:
 
-   * FIFO (default)
-   * LIFO
-   * Weighted Average
+    - FIFO (default)
+    - LIFO
+    - Weighted Average
+
 3. Displays:
 
-   * Revenue
-   * COGS
-   * Gross Profit
+    - Revenue
+    - COGS
+    - Gross Profit
+
 4. Is **accurate, auditable, and performant**
 
 ---
 
 # 🧱 DATABASE ALIGNMENT (USE EXISTING TABLES)
 
-* `sale_items` → revenue source
-* `cogs_entries` → stored COGS (truth)
-* `inventory_cost_layers` → FIFO/LIFO source
-* `inventory_valuation` → Weighted Average
-* `inventory_transactions` → stock ledger
-* `product_variants`, `products`
+- `sale_items` → revenue source
+- `cogs_entries` → stored COGS (truth)
+- `inventory_cost_layers` → FIFO/LIFO source
+- `inventory_valuation` → Weighted Average
+- `inventory_transactions` → stock ledger
+- `product_variants`, `products`
 
 ---
 
@@ -79,9 +81,9 @@ COGS must be:
 
 Responsibilities:
 
-* Handle all costing methods
-* Generate COGS entries during sale
-* Support FIFO, LIFO, Weighted Average
+- Handle all costing methods
+- Generate COGS entries during sale
+- Support FIFO, LIFO, Weighted Average
 
 ---
 
@@ -93,9 +95,9 @@ inventory_cost_layers
 
 Logic:
 
-* Order by created_at ASC
-* Deduct quantity from oldest layers
-* For each deduction:
+- Order by created_at ASC
+- Deduct quantity from oldest layers
+- For each deduction:
   → create cogs_entries row
 
 ---
@@ -104,7 +106,7 @@ Logic:
 
 Same as FIFO but:
 
-* Order by created_at DESC
+- Order by created_at DESC
 
 ---
 
@@ -130,13 +132,13 @@ For every sale_item:
 
 Insert into `cogs_entries`:
 
-* sale_item_id
-* variant_id
-* quantity
-* unit_cost
-* total_cost
-* costing_method
-* source_layer_id (NULL for weighted avg)
+- sale_item_id
+- variant_id
+- quantity
+- unit_cost
+- total_cost
+- costing_method
+- source_layer_id (NULL for weighted avg)
 
 ---
 
@@ -146,25 +148,25 @@ Since dataset can grow large:
 
 ### Use:
 
-* Proper indexing:
+- Proper indexing:
 
-  * variant_id
-  * warehouse_id
-  * created_at
+    - variant_id
+    - warehouse_id
+    - created_at
 
 ### Avoid:
 
-* Recalculating COGS from raw transactions on every request
+- Recalculating COGS from raw transactions on every request
 
 ### Strategy:
 
-* Use `cogs_entries` as source of truth
-* Aggregate using SQL GROUP BY
+- Use `cogs_entries` as source of truth
+- Aggregate using SQL GROUP BY
 
 ### Optional Optimization:
 
-* Cache results (Redis or Laravel cache)
-* Precompute summaries (daily/monthly)
+- Cache results (Redis or Laravel cache)
+- Precompute summaries (daily/monthly)
 
 ---
 
@@ -174,9 +176,9 @@ Since dataset can grow large:
 
 Query params:
 
-* start_date
-* end_date
-* costing_method (FIFO | LIFO | WEIGHTED_AVERAGE)
+- start_date
+- end_date
+- costing_method (FIFO | LIFO | WEIGHTED_AVERAGE)
 
 ---
 
@@ -190,8 +192,8 @@ IF user switches method:
 
 → Dynamically recalculate using:
 
-* inventory_cost_layers (FIFO/LIFO)
-* inventory_valuation (Weighted)
+- inventory_cost_layers (FIFO/LIFO)
+- inventory_valuation (Weighted)
 
 ⚠️ Do NOT overwrite stored data
 
@@ -200,7 +202,7 @@ IF user switches method:
 ## SQL (Base Aggregation)
 
 ```sql
-SELECT 
+SELECT
     pv.id AS variant_id,
     p.name AS product_name,
     pv.color,
@@ -231,12 +233,12 @@ GROUP BY pv.id, p.name, pv.color, pv.origin
 
 ## 1. Controls
 
-* Date range picker
-* Costing method selector:
+- Date range picker
+- Costing method selector:
 
-  * FIFO (default)
-  * LIFO
-  * Weighted Average
+    - FIFO (default)
+    - LIFO
+    - Weighted Average
 
 ---
 
@@ -244,49 +246,49 @@ GROUP BY pv.id, p.name, pv.color, pv.origin
 
 Columns:
 
-* Product Name
-* Color
-* Origin
-* Quantity Sold
-* Revenue
-* COGS
-* Gross Profit
-* Profit Margin %
+- Product Name
+- Color
+- Origin
+- Quantity Sold
+- Revenue
+- COGS
+- Gross Profit
+- Profit Margin %
 
 ---
 
 ## 3. UX REQUIREMENTS
 
-* Show loading spinner (calculation may be heavy)
-* Show warning when switching costing method
-* Debounce requests
-* Use pagination for large datasets
+- Show loading spinner (calculation may be heavy)
+- Show warning when switching costing method
+- Debounce requests
+- Use pagination for large datasets
 
 ---
 
 ## 4. Performance UX
 
-* Cache last result
-* Avoid unnecessary reloads
-* Show “Calculating…” indicator
+- Cache last result
+- Avoid unnecessary reloads
+- Show “Calculating…” indicator
 
 ---
 
 # ⚠️ CRITICAL BUSINESS RULES
 
-* NEVER recalculate stored FIFO COGS
-* NEVER overwrite cogs_entries
-* ALWAYS tie COGS to sale_items
-* ALWAYS use product_variants (not products)
+- NEVER recalculate stored FIFO COGS
+- NEVER overwrite cogs_entries
+- ALWAYS tie COGS to sale_items
+- ALWAYS use product_variants (not products)
 
 ---
 
 # 🚨 EDGE CASES
 
-* Partial layer consumption
-* Zero stock prevention
-* Sales spanning multiple cost layers
-* Switching costing methods dynamically
+- Partial layer consumption
+- Zero stock prevention
+- Sales spanning multiple cost layers
+- Switching costing methods dynamically
 
 ---
 
@@ -294,15 +296,15 @@ Columns:
 
 Copilot should generate:
 
-* CostingService (core logic)
-* FIFO/LIFO/Weighted algorithms
-* API endpoint for COGS
-* Optimized SQL queries
-* React page with:
+- CostingService (core logic)
+- FIFO/LIFO/Weighted algorithms
+- API endpoint for COGS
+- Optimized SQL queries
+- React page with:
 
-  * Filters
-  * Table
-  * Method switcher
+    - Filters
+    - Table
+    - Method switcher
 
 ---
 
@@ -310,9 +312,9 @@ Copilot should generate:
 
 Follow this strictly:
 
-* Ledger-based inventory
-* Variant-based tracking
-* Stored COGS for accuracy
-* Efficient queries for scalability
+- Ledger-based inventory
+- Variant-based tracking
+- Stored COGS for accuracy
+- Efficient queries for scalability
 
 Do NOT simplify logic.

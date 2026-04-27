@@ -2,6 +2,7 @@
 
 use App\Models\CogsEntry;
 use App\Models\CostingMethod;
+use App\Models\InventoryCostLayer;
 use App\Models\InventoryValuation;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -104,6 +105,7 @@ test('fifo costing stores layered cogs entries and report aggregates them', func
     expect((float) CogsEntry::query()->sum('total_cost'))->toBe(14.0);
     expect((float) CogsEntry::query()->where('unit_cost', 2)->sum('total_cost'))->toBe(10.0);
     expect((float) CogsEntry::query()->where('unit_cost', 4)->sum('total_cost'))->toBe(4.0);
+    expect(InventoryCostLayer::query()->whereNotNull('source_transaction_id')->count())->toBe(2);
 
     $response = $this->actingAs($admin)->getJson('/api/cogs?start_date=2026-04-01&end_date=2026-04-30&costing_method=FIFO');
 

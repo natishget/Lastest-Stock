@@ -19,6 +19,7 @@ Route::middleware(['auth'])->group(function () {
     })->name('dashboard');
 
     Route::get('cogs', [CogsController::class, 'index'])->name('cogs.index');
+    Route::get('cogs/report', [CogsController::class, 'report'])->name('cogs.web-report');
 });
 
 Route::middleware(['auth', 'admin'])->prefix('products')->name('products.')->group(function () {
@@ -32,11 +33,17 @@ Route::middleware(['auth', 'admin'])->prefix('products')->name('products.')->gro
 Route::middleware(['auth'])->prefix('purchases')->name('purchases.')->group(function () {
     Route::get('/', [PurchaseManagementController::class, 'index'])->name('index');
     Route::post('/', [PurchaseManagementController::class, 'store'])->name('store');
+    Route::put('/{purchase}', [PurchaseManagementController::class, 'update'])->name('update');
+    Route::post('/{purchase}/void', [PurchaseManagementController::class, 'void'])->name('void');
+    Route::post('/{purchase}/returns', [PurchaseManagementController::class, 'returnItems'])->name('returns.store');
 });
 
 Route::middleware(['auth'])->prefix('sales')->name('sales.')->group(function () {
     Route::get('/', [SalesManagementController::class, 'index'])->name('index');
     Route::post('/', [SalesManagementController::class, 'store'])->name('store');
+    Route::put('/{sale}', [SalesManagementController::class, 'update'])->name('update');
+    Route::post('/{sale}/void', [SalesManagementController::class, 'void'])->name('void');
+    Route::post('/{sale}/returns', [SalesManagementController::class, 'returnItems'])->name('returns.store');
 });
 
 Route::middleware(['auth', 'admin'])->prefix('users')->name('users.')->group(function () {

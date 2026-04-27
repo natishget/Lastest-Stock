@@ -28,14 +28,12 @@ interface CogsRow {
 interface CogsResponse {
     data: CogsRow[];
     links: Array<{ url: string | null; label: string; active: boolean }>;
-    meta: {
-        current_page: number;
-        from: number | null;
-        last_page: number;
-        per_page: number;
-        to: number | null;
-        total: number;
-    };
+    current_page: number;
+    from: number | null;
+    last_page: number;
+    per_page: number;
+    to: number | null;
+    total: number;
 }
 
 interface CogsPageProps {
@@ -82,9 +80,14 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
     const [isLoading, setIsLoading] = useState(true);
     const [isCalculating, setIsCalculating] = useState(false);
     const [rows, setRows] = useState<CogsResponse | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const debounceTimer = useRef<number | null>(null);
 
     const queryKey = useMemo(() => JSON.stringify({ startDate, endDate, costingMethod, page }), [costingMethod, endDate, page, startDate]);
+
+    useEffect(() => {
+        requestCache.clear();
+    }, []);
 
     useEffect(() => {
         if (debounceTimer.current) {
@@ -98,12 +101,13 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
                 setRows(requestCache.get(queryKey) ?? null);
                 setIsLoading(false);
                 setIsCalculating(false);
+                setLoadError(null);
                 return;
             }
 
             try {
                 const response = await fetch(
-                    `/api/cogs?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&costing_method=${encodeURIComponent(costingMethod)}&page=${page}&per_page=10`,
+                    `/cogs/report?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&costing_method=${encodeURIComponent(costingMethod)}&page=${page}&per_page=10`,
                     {
                         headers: {
                             Accept: 'application/json',
@@ -119,6 +123,10 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
                 const payload = (await response.json()) as CogsResponse;
                 requestCache.set(queryKey, payload);
                 setRows(payload);
+                setLoadError(null);
+            } catch {
+                setRows(null);
+                setLoadError('Unable to load COGS report data. Please refresh and try again.');
             } finally {
                 setIsLoading(false);
                 setIsCalculating(false);
@@ -173,6 +181,14 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
                                 Results are loaded from stored COGS entries for the selected method. Use this to compare costing scenarios without
                                 changing stored data.
                             </AlertDescription>
+                        </Alert>
+                    ) : null}
+
+                    {loadError ? (
+                        <Alert className="mt-4 border-red-300 bg-red-50 text-red-900">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>Report Loading Failed</AlertTitle>
+                            <AlertDescription>{loadError}</AlertDescription>
                         </Alert>
                     ) : null}
 
@@ -280,10 +296,24 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
 
                 <div className="flex items-center justify-between gap-3">
                     <p className="text-muted-foreground text-sm">
-                        Showing {rows?.meta.from ?? 0}-{rows?.meta.to ?? 0} of {rows?.meta.total ?? 0}
+                        Showing {rows?.from ?? 0}-{rows?.to ?? 0} of {rows?.total ?? 0}
                     </p>
 
                     <div className="flex gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                requestCache.clear();
+                                setIsLoading(true);
+                                setIsCalculating(true);
+                                setRows(null);
+                                setLoadError(null);
+                                setPage(1);
+                            }}
+                        >
+                            Refresh
+                        </Button>
                         <Button
                             type="button"
                             variant="outline"
@@ -296,7 +326,7 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
                             type="button"
                             variant="outline"
                             onClick={() => setPage((currentPage) => currentPage + 1)}
-                            disabled={rows ? page >= rows.meta.last_page : true}
+                            disabled={rows ? page >= rows.last_page : true}
                         >
                             Next
                         </Button>

@@ -5,7 +5,7 @@ namespace App\Http\Requests\Order;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class StorePurchaseRequest extends FormRequest
+class CreateSaleReturnRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -18,15 +18,12 @@ class StorePurchaseRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'supplier_name' => ['nullable', 'string', 'max:255'],
-            'invoice_number' => ['nullable', 'string', 'max:100'],
-            'notes' => ['nullable', 'string', 'max:1000'],
-            'purchase_date' => ['nullable', 'date'],
             'warehouse_id' => ['required', 'uuid', Rule::exists('warehouses', 'id')],
+            'return_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.variant_id' => ['required', 'uuid', Rule::exists('product_variants', 'id')],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'items.*.unit_cost' => ['required', 'numeric', 'gte:0'],
         ];
     }
 }

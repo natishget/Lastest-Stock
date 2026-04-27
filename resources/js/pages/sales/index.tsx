@@ -32,6 +32,9 @@ interface SaleRecord {
     customer_name: string | null;
     sale_date: string | null;
     total_amount: string | null;
+    status: 'POSTED' | 'VOIDED';
+    notes: string | null;
+    warehouse_id: string | null;
     item_count: number;
     items: Array<{
         variant_id: string;
@@ -59,9 +62,27 @@ interface SalesPageProps {
 
 interface SaleFormData {
     customer_name: string;
+    notes: string;
     sale_date: string;
     warehouse_id: string;
     items: SaleItemFormRow[];
+}
+
+interface SaleEditFormData {
+    customer_name: string;
+    notes: string;
+}
+
+interface SaleReturnFormRow {
+    variant_id: string;
+    quantity: string;
+}
+
+interface SaleReturnFormData {
+    warehouse_id: string;
+    return_date: string;
+    notes: string;
+    items: SaleReturnFormRow[];
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -79,12 +100,27 @@ const emptyRow = (): SaleItemFormRow => ({
 
 export default function SalesIndex({ sales, variantOptions, availableQuantities, warehouses }: SalesPageProps) {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
+    const [returningSale, setReturningSale] = useState<SaleRecord | null>(null);
 
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm<SaleFormData>({
         customer_name: '',
+        notes: '',
         sale_date: new Date().toISOString().slice(0, 10),
         warehouse_id: '',
         items: [emptyRow()],
+    });
+
+    const editForm = useForm<SaleEditFormData>({
+        customer_name: '',
+        notes: '',
+    });
+
+    const returnForm = useForm<SaleReturnFormData>({
+        warehouse_id: '',
+        return_date: new Date().toISOString().slice(0, 10),
+        notes: '',
+        items: [{ variant_id: '', quantity: '' }],
     });
 
     const groupedErrors = errors as Record<string, string | undefined>;
@@ -119,8 +155,102 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                 clearErrors();
                 setData('sale_date', new Date().toISOString().slice(0, 10));
                 setData('warehouse_id', '');
+                setData('notes', '');
                 setData('items', [emptyRow()]);
                 setIsCreateDialogOpen(false);
+            },
+        });
+    };
+
+    const openEditDialog = (sale: SaleRecord) => {
+        setEditingSale(sale);
+        editForm.clearErrors();
+        editForm.setData({
+            customer_name: sale.customer_name ?? '',
+            notes: sale.notes ?? '',
+        });
+    };
+
+    const submitEdit: FormEventHandler = (event) => {
+        event.preventDefault();
+
+        if (!editingSale) {
+            return;
+        }
+
+        editForm.put(route('sales.update', editingSale.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setEditingSale(null);
+                editForm.clearErrors();
+            },
+        });
+    };
+
+    const voidSale = (sale: SaleRecord) => {
+        if (!window.confirm('This will reverse stock and financial impact. Continue to void this sale?')) {
+            return;
+        }
+
+        const reason = window.prompt('Void reason (optional)') ?? '';
+
+        router.post(
+            route('sales.void', sale.id),
+            {
+                reason: reason || null,
+                void_date: new Date().toISOString().slice(0, 10),
+            },
+            {
+                preserveScroll: true,
+            },
+        );
+    };
+
+    const openReturnDialog = (sale: SaleRecord) => {
+        setReturningSale(sale);
+        returnForm.clearErrors();
+        returnForm.setData({
+            warehouse_id: sale.warehouse_id ?? '',
+            return_date: new Date().toISOString().slice(0, 10),
+            notes: '',
+            items: [{ variant_id: sale.items[0]?.variant_id ?? '', quantity: '' }],
+        });
+    };
+
+    const addReturnRow = () => {
+        returnForm.setData('items', [...returnForm.data.items, { variant_id: '', quantity: '' }]);
+    };
+
+    const removeReturnRow = (index: number) => {
+        if (returnForm.data.items.length === 1) {
+            return;
+        }
+
+        returnForm.setData(
+            'items',
+            returnForm.data.items.filter((_, currentIndex) => currentIndex !== index),
+        );
+    };
+
+    const updateReturnRow = (index: number, field: keyof SaleReturnFormRow, value: string) => {
+        returnForm.setData(
+            'items',
+            returnForm.data.items.map((row, currentIndex) => (currentIndex === index ? { ...row, [field]: value } : row)),
+        );
+    };
+
+    const submitReturn: FormEventHandler = (event) => {
+        event.preventDefault();
+
+        if (!returningSale) {
+            return;
+        }
+
+        returnForm.post(route('sales.returns.store', returningSale.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setReturningSale(null);
+                returnForm.clearErrors();
             },
         });
     };
@@ -164,14 +294,16 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                             <tr>
                                 <th className="px-4 py-3 text-left font-medium">Customer</th>
                                 <th className="px-4 py-3 text-left font-medium">Date</th>
+                                <th className="px-4 py-3 text-left font-medium">Status</th>
                                 <th className="px-4 py-3 text-left font-medium">Items</th>
                                 <th className="px-4 py-3 text-right font-medium">Total</th>
+                                <th className="px-4 py-3 text-right font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {sales.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="text-muted-foreground px-4 py-8 text-center">
+                                    <td colSpan={6} className="text-muted-foreground px-4 py-8 text-center">
                                         No sales yet.
                                     </td>
                                 </tr>
@@ -180,6 +312,9 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                                     <tr key={sale.id} className="border-t align-top">
                                         <td className="px-4 py-3 font-medium">{sale.customer_name ?? '-'}</td>
                                         <td className="px-4 py-3">{sale.sale_date ?? '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <Badge variant={sale.status === 'VOIDED' ? 'destructive' : 'outline'}>{sale.status}</Badge>
+                                        </td>
                                         <td className="px-4 py-3">
                                             <Badge variant="outline">{sale.item_count} items</Badge>
                                             <div className="text-muted-foreground mt-2 space-y-1 text-xs">
@@ -191,6 +326,31 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-right">{sale.total_amount ?? '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex justify-end gap-2">
+                                                <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(sale)}>
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => openReturnDialog(sale)}
+                                                    disabled={sale.status !== 'POSTED'}
+                                                >
+                                                    Return
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    onClick={() => voidSale(sale)}
+                                                    disabled={sale.status !== 'POSTED'}
+                                                >
+                                                    Void
+                                                </Button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))
                             )}
@@ -213,7 +373,7 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                     </DialogHeader>
 
                     <form className="space-y-4" onSubmit={submit}>
-                        <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-4 md:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="customer_name">Customer Name</Label>
                                 <Input
@@ -222,6 +382,12 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                                     onChange={(event) => setData('customer_name', event.target.value)}
                                 />
                                 <InputError message={groupedErrors.customer_name} />
+                            </div>
+
+                            <div className="grid gap-2 md:col-span-2">
+                                <Label htmlFor="notes">Notes</Label>
+                                <Input id="notes" value={data.notes} onChange={(event) => setData('notes', event.target.value)} />
+                                <InputError message={groupedErrors.notes} />
                             </div>
 
                             <div className="grid gap-2">
@@ -339,6 +505,175 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                             <Button type="submit" disabled={processing}>
                                 {processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
                                 Save Sale
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!editingSale} onOpenChange={(open) => !open && setEditingSale(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Sale</DialogTitle>
+                        <DialogDescription>Only non-financial fields can be edited after posting.</DialogDescription>
+                    </DialogHeader>
+
+                    <form className="space-y-4" onSubmit={submitEdit}>
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-customer-name">Customer Name</Label>
+                            <Input
+                                id="edit-customer-name"
+                                value={editForm.data.customer_name}
+                                onChange={(event) => editForm.setData('customer_name', event.target.value)}
+                            />
+                            <InputError message={editForm.errors.customer_name} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-sale-notes">Notes</Label>
+                            <Input
+                                id="edit-sale-notes"
+                                value={editForm.data.notes}
+                                onChange={(event) => editForm.setData('notes', event.target.value)}
+                            />
+                            <InputError message={editForm.errors.notes} />
+                        </div>
+
+                        <DialogFooter>
+                            <DialogClose asChild>
+                                <Button type="button" variant="secondary">
+                                    Cancel
+                                </Button>
+                            </DialogClose>
+                            <Button type="submit" disabled={editForm.processing}>
+                                {editForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                Save Changes
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!returningSale} onOpenChange={(open) => !open && setReturningSale(null)}>
+                <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>Return Sale Items</DialogTitle>
+                        <DialogDescription>This will reverse stock and financial impact for selected quantities.</DialogDescription>
+                    </DialogHeader>
+
+                    <form className="space-y-4" onSubmit={submitReturn}>
+                        <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-2">
+                                <Label>Warehouse</Label>
+                                <Select
+                                    value={returnForm.data.warehouse_id || '__none'}
+                                    onValueChange={(value) => returnForm.setData('warehouse_id', value === '__none' ? '' : value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select warehouse" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none">Select warehouse</SelectItem>
+                                        {warehouseOptionsMemo.map((warehouse) => (
+                                            <SelectItem key={warehouse.id} value={warehouse.id}>
+                                                {warehouse.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={returnForm.errors.warehouse_id} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="return-date">Return Date</Label>
+                                <Input
+                                    id="return-date"
+                                    type="date"
+                                    value={returnForm.data.return_date}
+                                    onChange={(event) => returnForm.setData('return_date', event.target.value)}
+                                />
+                                <InputError message={returnForm.errors.return_date} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="sale-return-notes">Notes</Label>
+                                <Input
+                                    id="sale-return-notes"
+                                    value={returnForm.data.notes}
+                                    onChange={(event) => returnForm.setData('notes', event.target.value)}
+                                />
+                                <InputError message={returnForm.errors.notes} />
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold">Return Items</h3>
+                                <Button type="button" variant="outline" size="sm" onClick={addReturnRow}>
+                                    Add Row
+                                </Button>
+                            </div>
+
+                            {returnForm.data.items.map((item, index) => (
+                                <div key={index} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[2fr_1fr_auto]">
+                                    <div className="grid gap-2">
+                                        <Label>Variant</Label>
+                                        <Select
+                                            value={item.variant_id || '__none'}
+                                            onValueChange={(value) => updateReturnRow(index, 'variant_id', value === '__none' ? '' : value)}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select variant" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="__none">Select variant</SelectItem>
+                                                {(returningSale?.items ?? []).map((saleItem) => (
+                                                    <SelectItem key={`${saleItem.variant_id}-${saleItem.variant_label}`} value={saleItem.variant_id}>
+                                                        {saleItem.variant_label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <InputError message={returnForm.errors[`items.${index}.variant_id`]} />
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label>Quantity</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.0001"
+                                            min="0"
+                                            value={item.quantity}
+                                            onChange={(event) => updateReturnRow(index, 'quantity', event.target.value)}
+                                        />
+                                        <InputError message={returnForm.errors[`items.${index}.quantity`]} />
+                                    </div>
+
+                                    <div className="flex items-end">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => removeReturnRow(index)}
+                                            disabled={returnForm.data.items.length === 1}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                            <InputError message={returnForm.errors.items} />
+                        </div>
+
+                        <DialogFooter>
+                            <DialogClose asChild>
+                                <Button type="button" variant="secondary">
+                                    Cancel
+                                </Button>
+                            </DialogClose>
+                            <Button type="submit" disabled={returnForm.processing}>
+                                {returnForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                Save Return
                             </Button>
                         </DialogFooter>
                     </form>

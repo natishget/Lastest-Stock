@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CogsEntry;
 use App\Models\InventoryCostLayer;
 use App\Models\InventoryValuation;
+use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SystemSetting;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -48,14 +49,14 @@ class CostingService
         return $this->normalizeMethod($activeMethod) ?? self::FIFO;
     }
 
-    public function recordPurchase(string $variantId, string $warehouseId, float $quantity, float $unitCost): void
+    public function recordPurchase(string $variantId, string $warehouseId, float $quantity, float $unitCost, ?string $sourceTransactionId = null): void
     {
         InventoryCostLayer::query()->create([
             'variant_id' => $variantId,
             'warehouse_id' => $warehouseId,
             'remaining_qty' => $quantity,
             'unit_cost' => $unitCost,
-            'source_transaction_id' => null,
+            'source_transaction_id' => $sourceTransactionId,
         ]);
 
         $this->adjustInventoryValuation($variantId, $warehouseId, $quantity, round($quantity * $unitCost, 2));
@@ -73,6 +74,22 @@ class CostingService
     }
 
     /**
+     * @return array<string, float>
+     */
+    public function applyCostingToSale(Sale $sale, string $warehouseId, ?string $method = null): array
+    {
+        $sale->loadMissing('items');
+
+        $totalCostBySaleItem = [];
+
+        foreach ($sale->items as $saleItem) {
+            $totalCostBySaleItem[$saleItem->id] = $this->recordSaleItemCogs($saleItem, $warehouseId, $method);
+        }
+
+        return $totalCostBySaleItem;
+    }
+
+    /**
      * @return LengthAwarePaginator<int, array<string, mixed>>
      */
     public function report(Carbon $startDate, Carbon $endDate, string $method, int $perPage = 10, int $page = 1): Paginator
@@ -82,6 +99,7 @@ class CostingService
         $saleSummary = DB::table('sale_items as si')
             ->join('sales as s', 's.id', '=', 'si.sale_id')
             ->whereBetween('s.sale_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->where(fn ($query) => $query->where('s.status', Sale::STATUS_POSTED)->orWhereNull('s.status'))
             ->selectRaw('si.variant_id, SUM(si.quantity) as quantity_sold, SUM(si.total_price) as revenue')
             ->groupBy('si.variant_id');
 
@@ -89,6 +107,7 @@ class CostingService
             ->join('sale_items as si', 'si.id', '=', 'ce.sale_item_id')
             ->join('sales as s', 's.id', '=', 'si.sale_id')
             ->whereBetween('s.sale_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->where(fn ($query) => $query->where('s.status', Sale::STATUS_POSTED)->orWhereNull('s.status'))
             ->where('ce.costing_method', $costingMethod)
             ->selectRaw('ce.variant_id, SUM(ce.total_cost) as cogs')
             ->groupBy('ce.variant_id');

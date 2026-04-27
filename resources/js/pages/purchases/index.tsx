@@ -33,6 +33,9 @@ interface PurchaseRecord {
     invoice_number: string | null;
     purchase_date: string | null;
     total_amount: string | null;
+    status: 'POSTED' | 'VOIDED';
+    notes: string | null;
+    warehouse_id: string | null;
     item_count: number;
     items: Array<{
         variant_id: string;
@@ -60,9 +63,27 @@ interface PurchasesPageProps {
 interface PurchaseFormData {
     supplier_name: string;
     invoice_number: string;
+    notes: string;
     purchase_date: string;
     warehouse_id: string;
     items: PurchaseItemFormRow[];
+}
+
+interface PurchaseEditFormData {
+    supplier_name: string;
+    notes: string;
+}
+
+interface PurchaseReturnFormRow {
+    variant_id: string;
+    quantity: string;
+}
+
+interface PurchaseReturnFormData {
+    warehouse_id: string;
+    return_date: string;
+    notes: string;
+    items: PurchaseReturnFormRow[];
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -80,13 +101,28 @@ const emptyRow = (): PurchaseItemFormRow => ({
 
 export default function PurchasesIndex({ purchases, variantOptions, warehouses }: PurchasesPageProps) {
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [editingPurchase, setEditingPurchase] = useState<PurchaseRecord | null>(null);
+    const [returningPurchase, setReturningPurchase] = useState<PurchaseRecord | null>(null);
 
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm<PurchaseFormData>({
         supplier_name: '',
         invoice_number: '',
+        notes: '',
         purchase_date: new Date().toISOString().slice(0, 10),
         warehouse_id: '',
         items: [emptyRow()],
+    });
+
+    const editForm = useForm<PurchaseEditFormData>({
+        supplier_name: '',
+        notes: '',
+    });
+
+    const returnForm = useForm<PurchaseReturnFormData>({
+        warehouse_id: '',
+        return_date: new Date().toISOString().slice(0, 10),
+        notes: '',
+        items: [{ variant_id: '', quantity: '' }],
     });
 
     const groupedErrors = errors as Record<string, string | undefined>;
@@ -121,8 +157,102 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                 clearErrors();
                 setData('purchase_date', new Date().toISOString().slice(0, 10));
                 setData('warehouse_id', '');
+                setData('notes', '');
                 setData('items', [emptyRow()]);
                 setIsCreateDialogOpen(false);
+            },
+        });
+    };
+
+    const openEditDialog = (purchase: PurchaseRecord) => {
+        setEditingPurchase(purchase);
+        editForm.clearErrors();
+        editForm.setData({
+            supplier_name: purchase.supplier_name ?? '',
+            notes: purchase.notes ?? '',
+        });
+    };
+
+    const submitEdit: FormEventHandler = (event) => {
+        event.preventDefault();
+
+        if (!editingPurchase) {
+            return;
+        }
+
+        editForm.put(route('purchases.update', editingPurchase.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setEditingPurchase(null);
+                editForm.clearErrors();
+            },
+        });
+    };
+
+    const voidPurchase = (purchase: PurchaseRecord) => {
+        if (!window.confirm('This will reverse stock and financial impact. Continue to void this purchase?')) {
+            return;
+        }
+
+        const reason = window.prompt('Void reason (optional)') ?? '';
+
+        router.post(
+            route('purchases.void', purchase.id),
+            {
+                reason: reason || null,
+                void_date: new Date().toISOString().slice(0, 10),
+            },
+            {
+                preserveScroll: true,
+            },
+        );
+    };
+
+    const openReturnDialog = (purchase: PurchaseRecord) => {
+        setReturningPurchase(purchase);
+        returnForm.clearErrors();
+        returnForm.setData({
+            warehouse_id: purchase.warehouse_id ?? '',
+            return_date: new Date().toISOString().slice(0, 10),
+            notes: '',
+            items: [{ variant_id: purchase.items[0]?.variant_id ?? '', quantity: '' }],
+        });
+    };
+
+    const addReturnRow = () => {
+        returnForm.setData('items', [...returnForm.data.items, { variant_id: '', quantity: '' }]);
+    };
+
+    const removeReturnRow = (index: number) => {
+        if (returnForm.data.items.length === 1) {
+            return;
+        }
+
+        returnForm.setData(
+            'items',
+            returnForm.data.items.filter((_, currentIndex) => currentIndex !== index),
+        );
+    };
+
+    const updateReturnRow = (index: number, field: keyof PurchaseReturnFormRow, value: string) => {
+        returnForm.setData(
+            'items',
+            returnForm.data.items.map((row, currentIndex) => (currentIndex === index ? { ...row, [field]: value } : row)),
+        );
+    };
+
+    const submitReturn: FormEventHandler = (event) => {
+        event.preventDefault();
+
+        if (!returningPurchase) {
+            return;
+        }
+
+        returnForm.post(route('purchases.returns.store', returningPurchase.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                setReturningPurchase(null);
+                returnForm.clearErrors();
             },
         });
     };
@@ -159,14 +289,16 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                                 <th className="px-4 py-3 text-left font-medium">Supplier</th>
                                 <th className="px-4 py-3 text-left font-medium">Invoice</th>
                                 <th className="px-4 py-3 text-left font-medium">Date</th>
+                                <th className="px-4 py-3 text-left font-medium">Status</th>
                                 <th className="px-4 py-3 text-left font-medium">Items</th>
                                 <th className="px-4 py-3 text-right font-medium">Total</th>
+                                <th className="px-4 py-3 text-right font-medium">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {purchases.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="text-muted-foreground px-4 py-8 text-center">
+                                    <td colSpan={7} className="text-muted-foreground px-4 py-8 text-center">
                                         No purchases yet.
                                     </td>
                                 </tr>
@@ -176,6 +308,9 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                                         <td className="px-4 py-3 font-medium">{purchase.supplier_name ?? '-'}</td>
                                         <td className="px-4 py-3">{purchase.invoice_number ?? '-'}</td>
                                         <td className="px-4 py-3">{purchase.purchase_date ?? '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <Badge variant={purchase.status === 'VOIDED' ? 'destructive' : 'outline'}>{purchase.status}</Badge>
+                                        </td>
                                         <td className="px-4 py-3">
                                             <Badge variant="outline">{purchase.item_count} items</Badge>
                                             <div className="text-muted-foreground mt-2 space-y-1 text-xs">
@@ -187,6 +322,31 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-right">{purchase.total_amount ?? '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex justify-end gap-2">
+                                                <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(purchase)}>
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => openReturnDialog(purchase)}
+                                                    disabled={purchase.status !== 'POSTED'}
+                                                >
+                                                    Return
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    onClick={() => voidPurchase(purchase)}
+                                                    disabled={purchase.status !== 'POSTED'}
+                                                >
+                                                    Void
+                                                </Button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))
                             )}
@@ -228,6 +388,12 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                                     onChange={(event) => setData('invoice_number', event.target.value)}
                                 />
                                 <InputError message={groupedErrors.invoice_number} />
+                            </div>
+
+                            <div className="grid gap-2 md:col-span-2">
+                                <Label htmlFor="notes">Notes</Label>
+                                <Input id="notes" value={data.notes} onChange={(event) => setData('notes', event.target.value)} />
+                                <InputError message={groupedErrors.notes} />
                             </div>
 
                             <div className="grid gap-2">
@@ -344,6 +510,178 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                             <Button type="submit" disabled={processing}>
                                 {processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
                                 Save Purchase
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!editingPurchase} onOpenChange={(open) => !open && setEditingPurchase(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Purchase</DialogTitle>
+                        <DialogDescription>Only non-financial fields can be edited after posting.</DialogDescription>
+                    </DialogHeader>
+
+                    <form className="space-y-4" onSubmit={submitEdit}>
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-supplier-name">Supplier Name</Label>
+                            <Input
+                                id="edit-supplier-name"
+                                value={editForm.data.supplier_name}
+                                onChange={(event) => editForm.setData('supplier_name', event.target.value)}
+                            />
+                            <InputError message={editForm.errors.supplier_name} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-purchase-notes">Notes</Label>
+                            <Input
+                                id="edit-purchase-notes"
+                                value={editForm.data.notes}
+                                onChange={(event) => editForm.setData('notes', event.target.value)}
+                            />
+                            <InputError message={editForm.errors.notes} />
+                        </div>
+
+                        <DialogFooter>
+                            <DialogClose asChild>
+                                <Button type="button" variant="secondary">
+                                    Cancel
+                                </Button>
+                            </DialogClose>
+                            <Button type="submit" disabled={editForm.processing}>
+                                {editForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                Save Changes
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!returningPurchase} onOpenChange={(open) => !open && setReturningPurchase(null)}>
+                <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                        <DialogTitle>Return Purchase Items</DialogTitle>
+                        <DialogDescription>This will reverse stock and financial impact for selected quantities.</DialogDescription>
+                    </DialogHeader>
+
+                    <form className="space-y-4" onSubmit={submitReturn}>
+                        <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-2">
+                                <Label>Warehouse</Label>
+                                <Select
+                                    value={returnForm.data.warehouse_id || '__none'}
+                                    onValueChange={(value) => returnForm.setData('warehouse_id', value === '__none' ? '' : value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select warehouse" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none">Select warehouse</SelectItem>
+                                        {warehouseOptionsMemo.map((warehouse) => (
+                                            <SelectItem key={warehouse.id} value={warehouse.id}>
+                                                {warehouse.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={returnForm.errors.warehouse_id} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="purchase-return-date">Return Date</Label>
+                                <Input
+                                    id="purchase-return-date"
+                                    type="date"
+                                    value={returnForm.data.return_date}
+                                    onChange={(event) => returnForm.setData('return_date', event.target.value)}
+                                />
+                                <InputError message={returnForm.errors.return_date} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="purchase-return-notes">Notes</Label>
+                                <Input
+                                    id="purchase-return-notes"
+                                    value={returnForm.data.notes}
+                                    onChange={(event) => returnForm.setData('notes', event.target.value)}
+                                />
+                                <InputError message={returnForm.errors.notes} />
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold">Return Items</h3>
+                                <Button type="button" variant="outline" size="sm" onClick={addReturnRow}>
+                                    Add Row
+                                </Button>
+                            </div>
+
+                            {returnForm.data.items.map((item, index) => (
+                                <div key={index} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[2fr_1fr_auto]">
+                                    <div className="grid gap-2">
+                                        <Label>Variant</Label>
+                                        <Select
+                                            value={item.variant_id || '__none'}
+                                            onValueChange={(value) => updateReturnRow(index, 'variant_id', value === '__none' ? '' : value)}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select variant" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="__none">Select variant</SelectItem>
+                                                {(returningPurchase?.items ?? []).map((purchaseItem) => (
+                                                    <SelectItem
+                                                        key={`${purchaseItem.variant_id}-${purchaseItem.variant_label}`}
+                                                        value={purchaseItem.variant_id}
+                                                    >
+                                                        {purchaseItem.variant_label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <InputError message={returnForm.errors[`items.${index}.variant_id`]} />
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label>Quantity</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.0001"
+                                            min="0"
+                                            value={item.quantity}
+                                            onChange={(event) => updateReturnRow(index, 'quantity', event.target.value)}
+                                        />
+                                        <InputError message={returnForm.errors[`items.${index}.quantity`]} />
+                                    </div>
+
+                                    <div className="flex items-end">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => removeReturnRow(index)}
+                                            disabled={returnForm.data.items.length === 1}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                            <InputError message={returnForm.errors.items} />
+                        </div>
+
+                        <DialogFooter>
+                            <DialogClose asChild>
+                                <Button type="button" variant="secondary">
+                                    Cancel
+                                </Button>
+                            </DialogClose>
+                            <Button type="submit" disabled={returnForm.processing}>
+                                {returnForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                Save Return
                             </Button>
                         </DialogFooter>
                     </form>

@@ -15,11 +15,23 @@ class Purchase extends Model
 
     protected $keyType = 'string';
 
+    public const STATUS_POSTED = 'POSTED';
+
+    public const STATUS_VOIDED = 'VOIDED';
+
+    public const REFERENCE_VOID = 'VOID';
+
+    public const REFERENCE_RETURN = 'RETURN';
+
     protected $fillable = [
         'supplier_name',
         'invoice_number',
         'total_amount',
         'purchase_date',
+        'status',
+        'reference_type',
+        'reference_id',
+        'notes',
         'created_by',
     ];
 

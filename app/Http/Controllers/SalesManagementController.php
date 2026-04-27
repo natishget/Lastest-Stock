@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Order\CreateSaleReturnRequest;
 use App\Http\Requests\Order\StoreSaleRequest;
+use App\Http\Requests\Order\UpdateSaleRequest;
+use App\Http\Requests\Order\VoidTransactionRequest;
 use App\Models\InventoryCostLayer;
 use App\Models\InventoryTransaction;
 use App\Models\ProductVariant;
@@ -10,16 +13,21 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\CorrectionService;
 use App\Services\CostingService;
+use App\Services\SalesService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SalesManagementController extends Controller
 {
-    public function __construct(private readonly CostingService $costingService) {}
+    public function __construct(
+        private readonly CostingService $costingService,
+        private readonly SalesService $salesService,
+        private readonly CorrectionService $correctionService,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -35,6 +43,9 @@ class SalesManagementController extends Controller
                 'customer_name' => $sale->customer_name,
                 'sale_date' => $sale->sale_date,
                 'total_amount' => $sale->total_amount,
+                'status' => $sale->status ?? Sale::STATUS_POSTED,
+                'notes' => $sale->notes,
+                'warehouse_id' => $this->resolveSaleWarehouse($sale),
                 'item_count' => $sale->items->count(),
                 'items' => $sale->items->map(fn (SaleItem $item): array => [
                     'variant_id' => $item->variant_id,
@@ -59,55 +70,52 @@ class SalesManagementController extends Controller
     {
         $this->authorizeManagementAccess($request);
 
-        $validated = $request->validated();
-        $user = $request->user();
-
-        DB::transaction(function () use ($validated, $user): void {
-            $warehouseId = $validated['warehouse_id'];
-
-            $sale = Sale::query()->create([
-                'customer_name' => $validated['customer_name'] ?? null,
-                'sale_date' => $validated['sale_date'] ?? now()->toDateString(),
-                'created_by' => $user?->id,
-                'total_amount' => 0,
-            ]);
-
-            $totalAmount = 0.0;
-
-            foreach ($validated['items'] as $itemData) {
-                $variantId = $itemData['variant_id'];
-                $quantity = (float) $itemData['quantity'];
-                $sellingPrice = (float) $itemData['selling_price'];
-                $lineTotal = round($quantity * $sellingPrice, 2);
-
-                $saleItem = $sale->items()->create([
-                    'variant_id' => $variantId,
-                    'quantity' => $quantity,
-                    'selling_price' => $sellingPrice,
-                    'total_price' => $lineTotal,
-                ]);
-
-                $totalCost = $this->costingService->recordSaleItemCogs($saleItem, $warehouseId);
-
-                InventoryTransaction::query()->create([
-                    'variant_id' => $variantId,
-                    'warehouse_id' => $warehouseId,
-                    'transaction_type' => 'SALE',
-                    'quantity' => -$quantity,
-                    'unit_cost' => $quantity > 0 ? round($totalCost / $quantity, 4) : 0,
-                    'reference_type' => Sale::class,
-                    'reference_id' => $sale->id,
-                    'transaction_date' => $validated['sale_date'] ?? now()->toDateString(),
-                    'created_by' => $user?->id,
-                ]);
-
-                $totalAmount += $lineTotal;
-            }
-
-            $sale->update(['total_amount' => $totalAmount]);
-        });
+        $this->salesService->createSale($request->validated(), $request->user());
 
         return back()->with('success', 'Sale created successfully.');
+    }
+
+    public function update(UpdateSaleRequest $request, Sale $sale): RedirectResponse
+    {
+        $this->authorizeManagementAccess($request);
+
+        $this->salesService->updateMetadata($sale, $request->validated());
+
+        return back()->with('success', 'Sale details updated successfully.');
+    }
+
+    public function void(VoidTransactionRequest $request, Sale $sale): RedirectResponse
+    {
+        $this->authorizeManagementAccess($request);
+
+        $validated = $request->validated();
+
+        $this->correctionService->voidSale(
+            saleId: $sale->id,
+            userId: $request->user()?->id,
+            reason: $validated['reason'] ?? null,
+            voidDate: $validated['void_date'] ?? null,
+        );
+
+        return back()->with('success', 'Sale voided successfully using reversal entries.');
+    }
+
+    public function returnItems(CreateSaleReturnRequest $request, Sale $sale): RedirectResponse
+    {
+        $this->authorizeManagementAccess($request);
+
+        $validated = $request->validated();
+
+        $this->correctionService->returnSale(
+            saleId: $sale->id,
+            warehouseId: (string) $validated['warehouse_id'],
+            items: $validated['items'],
+            userId: $request->user()?->id,
+            notes: $validated['notes'] ?? null,
+            returnDate: $validated['return_date'] ?? null,
+        );
+
+        return back()->with('success', 'Sale return recorded successfully.');
     }
 
     /**
@@ -179,5 +187,14 @@ class SalesManagementController extends Controller
             in_array($request->user()?->role, [User::ROLE_ADMIN, User::ROLE_SALES], true),
             403,
         );
+    }
+
+    private function resolveSaleWarehouse(Sale $sale): ?string
+    {
+        return InventoryTransaction::query()
+            ->where('reference_type', Sale::class)
+            ->where('reference_id', $sale->id)
+            ->where('transaction_type', 'SALE')
+            ->value('warehouse_id');
     }
 }
