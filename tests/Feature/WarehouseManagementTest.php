@@ -126,10 +126,15 @@ test('warehouse stock endpoint returns aggregated stock per variant', function (
         ->assertJsonPath('data.0.total_stock', 8);
 });
 
-test('non admin users cannot manage warehouse api', function () {
+test('non admin users can view warehouse api but cannot manage it', function () {
     $salesUser = User::factory()->create(['role' => User::ROLE_SALES]);
 
     $response = $this->actingAs($salesUser)->getJson('/api/warehouses');
 
-    $response->assertForbidden();
+    $response->assertOk();
+
+    $this->actingAs($salesUser)->post('/api/warehouses', [
+        'name' => 'Blocked Warehouse',
+        'location' => 'Blocked',
+    ])->assertForbidden();
 });

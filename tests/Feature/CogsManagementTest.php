@@ -6,9 +6,11 @@ use App\Models\InventoryCostLayer;
 use App\Models\InventoryValuation;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\Sale;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Models\Warehouse;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 function cogsTestVariant(array $attributes = []): ProductVariant
@@ -53,6 +55,30 @@ test('admin can view the cogs page', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
 
     $this->actingAs($admin)->get('/cogs')->assertOk();
+});
+
+test('cogs page defaults to latest posted sale month when sales exist', function () {
+    Carbon::setTestNow(Carbon::parse('2026-05-06'));
+
+    try {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+        Sale::query()->create([
+            'customer_name' => 'Default Range Check',
+            'total_amount' => 0,
+            'sale_date' => '2026-04-27',
+            'status' => Sale::STATUS_POSTED,
+            'created_by' => $admin->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/cogs')
+            ->assertOk()
+            ->assertSee('2026-04-01')
+            ->assertSee('2026-04-30');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('fifo costing stores layered cogs entries and report aggregates them', function () {
@@ -113,6 +139,63 @@ test('fifo costing stores layered cogs entries and report aggregates them', func
     expect((float) $response->json('data.0.revenue'))->toBe(54.0);
     expect((float) $response->json('data.0.cogs'))->toBe(14.0);
     expect((float) $response->json('data.0.gross_profit'))->toBe(40.0);
+});
+
+test('alternate costing methods are recalculated when fifo is active', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+    $warehouse = cogsTestWarehouse();
+    $variant = cogsTestVariant(['sku' => 'ALT-001', 'product_name' => 'Galvanized Coil']);
+
+    activateCostingMethod('FIFO');
+
+    $this->actingAs($admin)->post('/purchases', [
+        'supplier_name' => 'Alpha Supplies',
+        'purchase_date' => '2026-04-10',
+        'warehouse_id' => $warehouse->id,
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'quantity' => 5,
+                'unit_cost' => 2,
+            ],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    $this->actingAs($admin)->post('/purchases', [
+        'supplier_name' => 'Beta Supplies',
+        'purchase_date' => '2026-04-11',
+        'warehouse_id' => $warehouse->id,
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'quantity' => 5,
+                'unit_cost' => 4,
+            ],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    $this->actingAs($admin)->post('/sales', [
+        'customer_name' => 'Retail Buyer',
+        'sale_date' => '2026-04-12',
+        'warehouse_id' => $warehouse->id,
+        'items' => [
+            [
+                'variant_id' => $variant->id,
+                'quantity' => 6,
+                'selling_price' => 9,
+            ],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    $lifoResponse = $this->actingAs($admin)->getJson('/api/cogs?start_date=2026-04-01&end_date=2026-04-30&costing_method=LIFO');
+
+    $lifoResponse->assertOk();
+    expect((float) $lifoResponse->json('data.0.cogs'))->toBe(22.0);
+
+    $weightedResponse = $this->actingAs($admin)->getJson('/api/cogs?start_date=2026-04-01&end_date=2026-04-30&costing_method=WEIGHTED_AVERAGE');
+
+    $weightedResponse->assertOk();
+    expect((float) $weightedResponse->json('data.0.cogs'))->toBe(18.0);
 });
 
 test('lifo costing consumes the newest cost layers first', function () {

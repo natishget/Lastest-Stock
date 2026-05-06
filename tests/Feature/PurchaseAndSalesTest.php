@@ -155,11 +155,25 @@ test('sale is blocked when stock is insufficient', function () {
     $response->assertSessionHasErrors('items');
 });
 
-test('auditors cannot access purchase and sales management', function () {
+test('auditors can access purchase and sales screens but not mutate records', function () {
     $auditor = User::factory()->create(['role' => User::ROLE_AUDITOR]);
 
-    $this->actingAs($auditor)->get('/purchases')->assertForbidden();
-    $this->actingAs($auditor)->get('/sales')->assertForbidden();
+    $this->actingAs($auditor)->get('/purchases')->assertOk();
+    $this->actingAs($auditor)->get('/sales')->assertOk();
+
+    $this->actingAs($auditor)->post('/purchases', [
+        'supplier_name' => 'Blocked',
+        'purchase_date' => '2026-04-22',
+        'warehouse_id' => '00000000-0000-0000-0000-000000000000',
+        'items' => [],
+    ])->assertForbidden();
+
+    $this->actingAs($auditor)->post('/sales', [
+        'customer_name' => 'Blocked',
+        'sale_date' => '2026-04-22',
+        'warehouse_id' => '00000000-0000-0000-0000-000000000000',
+        'items' => [],
+    ])->assertForbidden();
 });
 
 test('void sale creates reversal entries and restores stock layers', function () {

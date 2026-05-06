@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { FormEventHandler, useMemo, useState } from 'react';
 
@@ -100,6 +100,9 @@ const emptyRow = (): PurchaseItemFormRow => ({
 });
 
 export default function PurchasesIndex({ purchases, variantOptions, warehouses }: PurchasesPageProps) {
+    const { auth } = usePage<{ auth: { user: { role: 'ADMIN' | 'SALES' | 'AUDITOR' } } }>().props;
+    const canManagePurchases = auth.user.role !== 'AUDITOR';
+
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [editingPurchase, setEditingPurchase] = useState<PurchaseRecord | null>(null);
     const [returningPurchase, setReturningPurchase] = useState<PurchaseRecord | null>(null);
@@ -275,10 +278,12 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                             <p className="text-muted-foreground mt-1 text-sm">Create purchases with multiple items and track inventory layers.</p>
                         </div>
 
-                        <Button onClick={() => setIsCreateDialogOpen(true)}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Make Purchase
-                        </Button>
+                        {canManagePurchases ? (
+                            <Button onClick={() => setIsCreateDialogOpen(true)}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Make Purchase
+                            </Button>
+                        ) : null}
                     </div>
                 </div>
 
@@ -292,7 +297,7 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                                 <th className="px-4 py-3 text-left font-medium">Status</th>
                                 <th className="px-4 py-3 text-left font-medium">Items</th>
                                 <th className="px-4 py-3 text-right font-medium">Total</th>
-                                <th className="px-4 py-3 text-right font-medium">Actions</th>
+                                {canManagePurchases ? <th className="px-4 py-3 text-right font-medium">Actions</th> : null}
                             </tr>
                         </thead>
                         <tbody>
@@ -322,31 +327,35 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-right">{purchase.total_amount ?? '-'}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex justify-end gap-2">
-                                                <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(purchase)}>
-                                                    Edit
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => openReturnDialog(purchase)}
-                                                    disabled={purchase.status !== 'POSTED'}
-                                                >
-                                                    Return
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    onClick={() => voidPurchase(purchase)}
-                                                    disabled={purchase.status !== 'POSTED'}
-                                                >
-                                                    Void
-                                                </Button>
-                                            </div>
-                                        </td>
+                                        {canManagePurchases ? (
+                                            <td className="px-4 py-3">
+                                                <div className="flex justify-end gap-2">
+                                                    <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(purchase)}>
+                                                        Edit
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => openReturnDialog(purchase)}
+                                                        disabled={purchase.status !== 'POSTED'}
+                                                    >
+                                                        Return
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="destructive"
+                                                        onClick={() => voidPurchase(purchase)}
+                                                        disabled={purchase.status !== 'POSTED'}
+                                                    >
+                                                        Void
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        ) : (
+                                            <td className="text-muted-foreground px-4 py-3 text-right">View only</td>
+                                        )}
                                     </tr>
                                 ))
                             )}

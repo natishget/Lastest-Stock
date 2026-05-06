@@ -22,6 +22,10 @@ const footerNavItems: NavItem[] = [
 
 export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
+    const role = auth.user.role;
+    const canViewOperationalModules = role === 'ADMIN' || role === 'SALES' || role === 'AUDITOR';
+    const canViewProducts = role === 'ADMIN' || role === 'AUDITOR';
+    const canViewCogs = role === 'ADMIN' || role === 'AUDITOR';
 
     const mainNavItems: NavItem[] = [
         {
@@ -29,7 +33,7 @@ export function AppSidebar() {
             url: '/dashboard',
             icon: LayoutGrid,
         },
-        ...(auth.user.role === 'ADMIN'
+        ...(canViewProducts
             ? [
                   {
                       title: 'Products',
@@ -48,7 +52,7 @@ export function AppSidebar() {
                   },
               ]
             : []),
-        ...(auth.user.role === 'ADMIN' || auth.user.role === 'SALES'
+        ...(canViewOperationalModules
             ? [
                   {
                       title: 'Purchases',
@@ -60,11 +64,15 @@ export function AppSidebar() {
                       url: '/sales',
                       icon: ShoppingCart,
                   },
-                  {
-                      title: 'COGS',
-                      url: '/cogs',
-                      icon: BarChart3,
-                  },
+                  ...(canViewCogs
+                      ? [
+                            {
+                                title: 'COGS',
+                                url: '/cogs',
+                                icon: BarChart3,
+                            },
+                        ]
+                      : []),
               ]
             : []),
     ];

@@ -18,6 +18,7 @@ use App\Services\CostingService;
 use App\Services\SalesService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -31,7 +32,7 @@ class SalesManagementController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizeManagementAccess($request);
+        $this->authorizeViewAccess($request);
 
         $sales = Sale::query()
             ->with(['items.variant.product'])
@@ -139,8 +140,12 @@ class SalesManagementController extends Controller
      */
     private function availableQuantities(): array
     {
+        $warehouseVariantExpression = DB::connection()->getDriverName() === 'sqlite'
+            ? "warehouse_id || ':' || variant_id"
+            : "CONCAT(warehouse_id, ':', variant_id)";
+
         return InventoryCostLayer::query()
-            ->selectRaw("CONCAT(warehouse_id, ':', variant_id) as warehouse_variant_key")
+            ->selectRaw("{$warehouseVariantExpression} as warehouse_variant_key")
             ->selectRaw('COALESCE(SUM(remaining_qty), 0) as available_qty')
             ->whereNotNull('warehouse_id')
             ->groupBy('warehouse_id', 'variant_id')
@@ -185,6 +190,14 @@ class SalesManagementController extends Controller
     {
         abort_unless(
             in_array($request->user()?->role, [User::ROLE_ADMIN, User::ROLE_SALES], true),
+            403,
+        );
+    }
+
+    private function authorizeViewAccess(Request $request): void
+    {
+        abort_unless(
+            in_array($request->user()?->role, [User::ROLE_ADMIN, User::ROLE_SALES, User::ROLE_AUDITOR], true),
             403,
         );
     }

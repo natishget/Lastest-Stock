@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { LoaderCircle } from 'lucide-react';
 import { FormEventHandler, useEffect, useMemo, useState } from 'react';
 
@@ -59,6 +59,9 @@ async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T
 }
 
 export default function WarehousesIndex() {
+    const { auth } = usePage<{ auth: { user: { role: 'ADMIN' | 'SALES' | 'AUDITOR' } } }>().props;
+    const canManageWarehouses = auth.user.role === 'ADMIN';
+
     const [warehouses, setWarehouses] = useState<WarehouseRecord[]>([]);
     const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(true);
     const [warehouseLoadError, setWarehouseLoadError] = useState('');
@@ -207,7 +210,7 @@ export default function WarehousesIndex() {
                             </p>
                         </div>
 
-                        <Button onClick={openCreateDialog}>Add Warehouse</Button>
+                        {canManageWarehouses ? <Button onClick={openCreateDialog}>Add Warehouse</Button> : null}
                     </div>
                 </div>
 
@@ -219,7 +222,7 @@ export default function WarehousesIndex() {
                             <tr>
                                 <th className="px-4 py-3 text-left font-medium">Name</th>
                                 <th className="px-4 py-3 text-left font-medium">Location</th>
-                                <th className="px-4 py-3 text-right font-medium">Actions</th>
+                                {canManageWarehouses ? <th className="px-4 py-3 text-right font-medium">Actions</th> : null}
                             </tr>
                         </thead>
                         <tbody>
@@ -249,25 +252,38 @@ export default function WarehousesIndex() {
                                     <tr key={warehouse.id} className="border-t align-top">
                                         <td className="px-4 py-3 font-medium">{warehouse.name}</td>
                                         <td className="px-4 py-3">{warehouse.location || '-'}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex justify-end gap-2">
+                                        {canManageWarehouses ? (
+                                            <td className="px-4 py-3">
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        onClick={() => void openStockDialog(warehouse)}
+                                                    >
+                                                        View
+                                                    </Button>
+                                                    <Button type="button" variant="outline" size="sm" onClick={() => openEditDialog(warehouse)}>
+                                                        Edit
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        disabled={deletingWarehouseId === warehouse.id}
+                                                        onClick={() => void removeWarehouse(warehouse)}
+                                                    >
+                                                        {deletingWarehouseId === warehouse.id ? 'Deleting...' : 'Delete'}
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        ) : (
+                                            <td className="px-4 py-3 text-right">
                                                 <Button type="button" variant="secondary" size="sm" onClick={() => void openStockDialog(warehouse)}>
                                                     View
                                                 </Button>
-                                                <Button type="button" variant="outline" size="sm" onClick={() => openEditDialog(warehouse)}>
-                                                    Edit
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    disabled={deletingWarehouseId === warehouse.id}
-                                                    onClick={() => void removeWarehouse(warehouse)}
-                                                >
-                                                    {deletingWarehouseId === warehouse.id ? 'Deleting...' : 'Delete'}
-                                                </Button>
-                                            </div>
-                                        </td>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))
                             )}

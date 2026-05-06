@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
+import { downloadSalesDocumentPdf } from '@/lib/sales-pdf';
 import { type BreadcrumbItem } from '@/types';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { FormEventHandler, useMemo, useState } from 'react';
 
@@ -99,6 +100,9 @@ const emptyRow = (): SaleItemFormRow => ({
 });
 
 export default function SalesIndex({ sales, variantOptions, availableQuantities, warehouses }: SalesPageProps) {
+    const { auth } = usePage<{ auth: { user: { role: 'ADMIN' | 'SALES' | 'AUDITOR' } } }>().props;
+    const canManageSales = auth.user.role !== 'AUDITOR';
+
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [editingSale, setEditingSale] = useState<SaleRecord | null>(null);
     const [returningSale, setReturningSale] = useState<SaleRecord | null>(null);
@@ -124,6 +128,7 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
     });
 
     const groupedErrors = errors as Record<string, string | undefined>;
+    const variantLabelMap = useMemo(() => new Map(variantOptions.map((option) => [option.id, option.label])), [variantOptions]);
 
     const addRow = () => {
         setData('items', [...data.items, emptyRow()]);
@@ -148,9 +153,29 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
 
+        const invoiceDocumentNumber = `INV-${data.sale_date.replaceAll('-', '')}-${Date.now().toString().slice(-6)}`;
+        const invoiceItems = data.items
+            .map((item) => ({
+                name: variantLabelMap.get(item.variant_id) ?? 'Unnamed item',
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.selling_price),
+                totalPrice: Number(item.quantity) * Number(item.selling_price),
+            }))
+            .filter((item) => item.name !== 'Unnamed item' && item.quantity > 0 && item.unitPrice >= 0);
+
         post(route('sales.store'), {
             preserveScroll: true,
             onSuccess: () => {
+                downloadSalesDocumentPdf({
+                    kind: 'INVOICE',
+                    heading: 'Sales Invoice',
+                    documentNumber: invoiceDocumentNumber,
+                    documentDate: data.sale_date,
+                    customerName: data.customer_name || null,
+                    notes: data.notes || null,
+                    items: invoiceItems,
+                });
+
                 reset();
                 clearErrors();
                 setData('sale_date', new Date().toISOString().slice(0, 10));
@@ -255,6 +280,32 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
         });
     };
 
+    const generateQuotation = () => {
+        const quotationItems = data.items
+            .map((item) => ({
+                name: variantLabelMap.get(item.variant_id) ?? 'Unnamed item',
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.selling_price),
+                totalPrice: Number(item.quantity) * Number(item.selling_price),
+            }))
+            .filter((item) => item.name !== 'Unnamed item' && item.quantity > 0 && item.unitPrice >= 0);
+
+        if (quotationItems.length === 0) {
+            window.alert('Add at least one valid item before generating a quotation.');
+            return;
+        }
+
+        downloadSalesDocumentPdf({
+            kind: 'QUOTATION',
+            heading: 'Proforma Invoice',
+            documentNumber: `Q-${data.sale_date.replaceAll('-', '')}-${Date.now().toString().slice(-6)}`,
+            documentDate: data.sale_date,
+            customerName: data.customer_name || null,
+            notes: data.notes || null,
+            items: quotationItems,
+        });
+    };
+
     const resultStart = sales.total === 0 ? 0 : (sales.current_page - 1) * sales.per_page + 1;
     const resultEnd = Math.min(sales.current_page * sales.per_page, sales.total);
 
@@ -281,10 +332,12 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                             <p className="text-muted-foreground mt-1 text-sm">Create sales with multiple items and consume inventory FIFO layers.</p>
                         </div>
 
-                        <Button onClick={() => setIsCreateDialogOpen(true)}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Make Sale
-                        </Button>
+                        {canManageSales ? (
+                            <Button onClick={() => setIsCreateDialogOpen(true)}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Make Sale
+                            </Button>
+                        ) : null}
                     </div>
                 </div>
 
@@ -297,7 +350,7 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                                 <th className="px-4 py-3 text-left font-medium">Status</th>
                                 <th className="px-4 py-3 text-left font-medium">Items</th>
                                 <th className="px-4 py-3 text-right font-medium">Total</th>
-                                <th className="px-4 py-3 text-right font-medium">Actions</th>
+                                {canManageSales ? <th className="px-4 py-3 text-right font-medium">Actions</th> : null}
                             </tr>
                         </thead>
                         <tbody>
@@ -326,31 +379,35 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-right">{sale.total_amount ?? '-'}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex justify-end gap-2">
-                                                <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(sale)}>
-                                                    Edit
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => openReturnDialog(sale)}
-                                                    disabled={sale.status !== 'POSTED'}
-                                                >
-                                                    Return
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    onClick={() => voidSale(sale)}
-                                                    disabled={sale.status !== 'POSTED'}
-                                                >
-                                                    Void
-                                                </Button>
-                                            </div>
-                                        </td>
+                                        {canManageSales ? (
+                                            <td className="px-4 py-3">
+                                                <div className="flex justify-end gap-2">
+                                                    <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(sale)}>
+                                                        Edit
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => openReturnDialog(sale)}
+                                                        disabled={sale.status !== 'POSTED'}
+                                                    >
+                                                        Return
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="destructive"
+                                                        onClick={() => voidSale(sale)}
+                                                        disabled={sale.status !== 'POSTED'}
+                                                    >
+                                                        Void
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        ) : (
+                                            <td className="text-muted-foreground px-4 py-3 text-right">View only</td>
+                                        )}
                                     </tr>
                                 ))
                             )}
@@ -502,6 +559,9 @@ export default function SalesIndex({ sales, variantOptions, availableQuantities,
                                     Cancel
                                 </Button>
                             </DialogClose>
+                            <Button type="button" variant="outline" onClick={generateQuotation}>
+                                Generate Quotation
+                            </Button>
                             <Button type="submit" disabled={processing}>
                                 {processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
                                 Save Sale

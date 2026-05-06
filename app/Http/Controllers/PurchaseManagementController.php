@@ -28,7 +28,7 @@ class PurchaseManagementController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->authorizeManagementAccess($request);
+        $this->authorizeViewAccess($request);
 
         $purchases = Purchase::query()
             ->with(['items.variant.product'])
@@ -167,6 +167,14 @@ class PurchaseManagementController extends Controller
     {
         abort_unless(
             in_array($request->user()?->role, [User::ROLE_ADMIN, User::ROLE_SALES], true),
+            403,
+        );
+    }
+
+    private function authorizeViewAccess(Request $request): void
+    {
+        abort_unless(
+            in_array($request->user()?->role, [User::ROLE_ADMIN, User::ROLE_SALES, User::ROLE_AUDITOR], true),
             403,
         );
     }

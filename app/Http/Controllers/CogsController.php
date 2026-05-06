@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Sale;
 use App\Services\CostingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,13 +18,14 @@ class CogsController extends Controller
     public function index(Request $request): Response
     {
         $activeMethod = $this->costingService->resolveMethod();
+        $defaultDateRange = $this->defaultDateRange();
 
         return Inertia::render('cogs/index', [
             'activeMethod' => $activeMethod,
             'methodOptions' => $this->methodOptions(),
             'defaultFilters' => [
-                'startDate' => now()->startOfMonth()->toDateString(),
-                'endDate' => now()->toDateString(),
+                'startDate' => $defaultDateRange['startDate'],
+                'endDate' => $defaultDateRange['endDate'],
                 'costingMethod' => $activeMethod,
             ],
         ]);
@@ -56,5 +58,29 @@ class CogsController extends Controller
     private function methodOptions(): array
     {
         return $this->costingService->methods();
+    }
+
+    /**
+     * @return array{startDate: string, endDate: string}
+     */
+    private function defaultDateRange(): array
+    {
+        $latestSaleDate = Sale::query()
+            ->where(fn ($query) => $query->where('status', Sale::STATUS_POSTED)->orWhereNull('status'))
+            ->max('sale_date');
+
+        if (is_string($latestSaleDate) && $latestSaleDate !== '') {
+            $latest = Carbon::parse($latestSaleDate);
+
+            return [
+                'startDate' => $latest->copy()->startOfMonth()->toDateString(),
+                'endDate' => $latest->copy()->endOfMonth()->toDateString(),
+            ];
+        }
+
+        return [
+            'startDate' => now()->startOfMonth()->toDateString(),
+            'endDate' => now()->toDateString(),
+        ];
     }
 }

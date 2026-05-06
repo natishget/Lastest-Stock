@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { LoaderCircle, Search } from 'lucide-react';
 import { FormEventHandler, useMemo, useState } from 'react';
 
@@ -92,6 +92,9 @@ function ValueBadges({ values }: { values: string[] }) {
 }
 
 export default function ProductManagementPage({ variants, filters, productOptions, origins, colors }: ProductsPageProps) {
+    const { auth } = usePage<{ auth: { user: { role: 'ADMIN' | 'SALES' | 'AUDITOR' } } }>().props;
+    const canManageProducts = auth.user.role === 'ADMIN';
+
     const [searchTerm, setSearchTerm] = useState(filters.search ?? '');
     const [originFilter, setOriginFilter] = useState<Origin | ''>(filters.origin ?? '');
     const [colorFilter, setColorFilter] = useState(filters.color ?? '');
@@ -201,12 +204,14 @@ export default function ProductManagementPage({ variants, filters, productOption
                             </p>
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
-                            <Button onClick={() => setIsCreateDialogOpen(true)}>Add Product</Button>
-                            <Button variant="secondary" onClick={() => setIsVariantDialogOpen(true)}>
-                                Add Product Variant
-                            </Button>
-                        </div>
+                        {canManageProducts ? (
+                            <div className="flex flex-wrap gap-2">
+                                <Button onClick={() => setIsCreateDialogOpen(true)}>Add Product</Button>
+                                <Button variant="secondary" onClick={() => setIsVariantDialogOpen(true)}>
+                                    Add Product Variant
+                                </Button>
+                            </div>
+                        ) : null}
                     </div>
 
                     <form onSubmit={searchVariants} className="mt-6 grid gap-3 md:grid-cols-[1fr_180px_180px_auto_auto]">
@@ -352,161 +357,165 @@ export default function ProductManagementPage({ variants, filters, productOption
                 </div>
             </div>
 
-            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Add New Product</DialogTitle>
-                        <DialogDescription>Create a new product record.</DialogDescription>
-                    </DialogHeader>
+            {canManageProducts ? (
+                <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Add New Product</DialogTitle>
+                            <DialogDescription>Create a new product record.</DialogDescription>
+                        </DialogHeader>
 
-                    <form className="space-y-4" onSubmit={submitCreate}>
-                        <div className="grid gap-2">
-                            <Label htmlFor="create-name">Name</Label>
-                            <Input
-                                id="create-name"
-                                value={createForm.data.name}
-                                onChange={(event) => createForm.setData('name', event.target.value)}
-                                required
-                            />
-                            <InputError message={createForm.errors.name} />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="create-base-unit">Base Unit</Label>
-                            <Input
-                                id="create-base-unit"
-                                value={createForm.data.base_unit}
-                                onChange={(event) => createForm.setData('base_unit', event.target.value)}
-                                placeholder="Piece, meter, box..."
-                            />
-                            <InputError message={createForm.errors.base_unit} />
-                        </div>
-
-                        <DialogFooter>
-                            <DialogClose asChild>
-                                <Button type="button" variant="secondary">
-                                    Cancel
-                                </Button>
-                            </DialogClose>
-                            <Button type="submit" disabled={createForm.processing}>
-                                {createForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                                Save Product
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Add Product Variant</DialogTitle>
-                        <DialogDescription>Select a product and define the variant details.</DialogDescription>
-                    </DialogHeader>
-
-                    <form className="space-y-4" onSubmit={submitVariant}>
-                        <div className="grid gap-2">
-                            <Label htmlFor="variant-product">Product</Label>
-                            <Select
-                                value={variantForm.data.product_id || '__none'}
-                                onValueChange={(value) => variantForm.setData('product_id', value === '__none' ? '' : value)}
-                            >
-                                <SelectTrigger id="variant-product">
-                                    <SelectValue placeholder="Select product" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="__none">Select product</SelectItem>
-                                    {productOptionsMemo.map((product) => (
-                                        <SelectItem key={product.id} value={product.id}>
-                                            {product.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <InputError message={variantForm.errors.product_id} />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="variant-origin">Origin</Label>
-                            <Select
-                                value={variantForm.data.origin || '__none'}
-                                onValueChange={(value) => variantForm.setData('origin', value === '__none' ? '' : (value as Origin))}
-                            >
-                                <SelectTrigger id="variant-origin">
-                                    <SelectValue placeholder="Select origin" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="__none">None</SelectItem>
-                                    <SelectItem value="LOCAL">LOCAL</SelectItem>
-                                    <SelectItem value="IMPORTED">IMPORTED</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <InputError message={variantForm.errors.origin} />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="variant-color">Color</Label>
-                            <Input
-                                id="variant-color"
-                                value={variantForm.data.color}
-                                onChange={(event) => variantForm.setData('color', event.target.value)}
-                                placeholder="Blue"
-                            />
-                            <InputError message={variantForm.errors.color} />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="variant-sku">SKU</Label>
-                            <Input
-                                id="variant-sku"
-                                value={variantForm.data.sku}
-                                onChange={(event) => variantForm.setData('sku', event.target.value)}
-                                placeholder="SKU-001"
-                            />
-                            <InputError message={variantForm.errors.sku} />
-                        </div>
-
-                        <div className="grid gap-2 md:grid-cols-2">
+                        <form className="space-y-4" onSubmit={submitCreate}>
                             <div className="grid gap-2">
-                                <Label htmlFor="variant-thickness">Thickness</Label>
+                                <Label htmlFor="create-name">Name</Label>
                                 <Input
-                                    id="variant-thickness"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={variantForm.data.thickness}
-                                    onChange={(event) => variantForm.setData('thickness', event.target.value)}
-                                    placeholder="1.25"
+                                    id="create-name"
+                                    value={createForm.data.name}
+                                    onChange={(event) => createForm.setData('name', event.target.value)}
+                                    required
                                 />
-                                <InputError message={variantForm.errors.thickness} />
+                                <InputError message={createForm.errors.name} />
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="variant-size">Size</Label>
+                                <Label htmlFor="create-base-unit">Base Unit</Label>
                                 <Input
-                                    id="variant-size"
-                                    value={variantForm.data.size}
-                                    onChange={(event) => variantForm.setData('size', event.target.value)}
-                                    placeholder="XL"
+                                    id="create-base-unit"
+                                    value={createForm.data.base_unit}
+                                    onChange={(event) => createForm.setData('base_unit', event.target.value)}
+                                    placeholder="Piece, meter, box..."
                                 />
-                                <InputError message={variantForm.errors.size} />
+                                <InputError message={createForm.errors.base_unit} />
                             </div>
-                        </div>
 
-                        <DialogFooter>
-                            <DialogClose asChild>
-                                <Button type="button" variant="secondary">
-                                    Cancel
+                            <DialogFooter>
+                                <DialogClose asChild>
+                                    <Button type="button" variant="secondary">
+                                        Cancel
+                                    </Button>
+                                </DialogClose>
+                                <Button type="submit" disabled={createForm.processing}>
+                                    {createForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                    Save Product
                                 </Button>
-                            </DialogClose>
-                            <Button type="submit" disabled={variantForm.processing}>
-                                {variantForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                                Save Variant
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
+            ) : null}
+
+            {canManageProducts ? (
+                <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Add Product Variant</DialogTitle>
+                            <DialogDescription>Select a product and define the variant details.</DialogDescription>
+                        </DialogHeader>
+
+                        <form className="space-y-4" onSubmit={submitVariant}>
+                            <div className="grid gap-2">
+                                <Label htmlFor="variant-product">Product</Label>
+                                <Select
+                                    value={variantForm.data.product_id || '__none'}
+                                    onValueChange={(value) => variantForm.setData('product_id', value === '__none' ? '' : value)}
+                                >
+                                    <SelectTrigger id="variant-product">
+                                        <SelectValue placeholder="Select product" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none">Select product</SelectItem>
+                                        {productOptionsMemo.map((product) => (
+                                            <SelectItem key={product.id} value={product.id}>
+                                                {product.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={variantForm.errors.product_id} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="variant-origin">Origin</Label>
+                                <Select
+                                    value={variantForm.data.origin || '__none'}
+                                    onValueChange={(value) => variantForm.setData('origin', value === '__none' ? '' : (value as Origin))}
+                                >
+                                    <SelectTrigger id="variant-origin">
+                                        <SelectValue placeholder="Select origin" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none">None</SelectItem>
+                                        <SelectItem value="LOCAL">LOCAL</SelectItem>
+                                        <SelectItem value="IMPORTED">IMPORTED</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={variantForm.errors.origin} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="variant-color">Color</Label>
+                                <Input
+                                    id="variant-color"
+                                    value={variantForm.data.color}
+                                    onChange={(event) => variantForm.setData('color', event.target.value)}
+                                    placeholder="Blue"
+                                />
+                                <InputError message={variantForm.errors.color} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="variant-sku">SKU</Label>
+                                <Input
+                                    id="variant-sku"
+                                    value={variantForm.data.sku}
+                                    onChange={(event) => variantForm.setData('sku', event.target.value)}
+                                    placeholder="SKU-001"
+                                />
+                                <InputError message={variantForm.errors.sku} />
+                            </div>
+
+                            <div className="grid gap-2 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="variant-thickness">Thickness</Label>
+                                    <Input
+                                        id="variant-thickness"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={variantForm.data.thickness}
+                                        onChange={(event) => variantForm.setData('thickness', event.target.value)}
+                                        placeholder="1.25"
+                                    />
+                                    <InputError message={variantForm.errors.thickness} />
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="variant-size">Size</Label>
+                                    <Input
+                                        id="variant-size"
+                                        value={variantForm.data.size}
+                                        onChange={(event) => variantForm.setData('size', event.target.value)}
+                                        placeholder="XL"
+                                    />
+                                    <InputError message={variantForm.errors.size} />
+                                </div>
+                            </div>
+
+                            <DialogFooter>
+                                <DialogClose asChild>
+                                    <Button type="button" variant="secondary">
+                                        Cancel
+                                    </Button>
+                                </DialogClose>
+                                <Button type="submit" disabled={variantForm.processing}>
+                                    {variantForm.processing && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                    Save Variant
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
+            ) : null}
         </AppLayout>
     );
 }

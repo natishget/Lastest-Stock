@@ -18,29 +18,40 @@ Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('dashboard/financials', [DashboardController::class, 'financials'])->name('dashboard.web-financials');
     Route::get('dashboard/top-products', [DashboardController::class, 'topProducts'])->name('dashboard.web-top-products');
+});
 
+Route::middleware(['auth', 'role:ADMIN,AUDITOR'])->group(function () {
     Route::get('cogs', [CogsController::class, 'index'])->name('cogs.index');
     Route::get('cogs/report', [CogsController::class, 'report'])->name('cogs.web-report');
 });
 
-Route::middleware(['auth', 'admin'])->prefix('products')->name('products.')->group(function () {
+Route::middleware(['auth', 'role:ADMIN,AUDITOR'])->prefix('products')->name('products.')->group(function () {
     Route::get('/', [ProductManagementController::class, 'index'])->name('index');
+});
+
+Route::middleware(['auth', 'admin'])->prefix('products')->name('products.')->group(function () {
     Route::post('/', [ProductManagementController::class, 'store'])->name('store');
     Route::post('/variants', [ProductManagementController::class, 'storeVariant'])->name('variants.store');
     Route::put('/{product}', [ProductManagementController::class, 'update'])->name('update');
     Route::delete('/{product}', [ProductManagementController::class, 'destroy'])->name('destroy');
 });
 
-Route::middleware(['auth'])->prefix('purchases')->name('purchases.')->group(function () {
+Route::middleware(['auth', 'role:ADMIN,SALES,AUDITOR'])->prefix('purchases')->name('purchases.')->group(function () {
     Route::get('/', [PurchaseManagementController::class, 'index'])->name('index');
+});
+
+Route::middleware(['auth', 'role:ADMIN,SALES'])->prefix('purchases')->name('purchases.')->group(function () {
     Route::post('/', [PurchaseManagementController::class, 'store'])->name('store');
     Route::put('/{purchase}', [PurchaseManagementController::class, 'update'])->name('update');
     Route::post('/{purchase}/void', [PurchaseManagementController::class, 'void'])->name('void');
     Route::post('/{purchase}/returns', [PurchaseManagementController::class, 'returnItems'])->name('returns.store');
 });
 
-Route::middleware(['auth'])->prefix('sales')->name('sales.')->group(function () {
+Route::middleware(['auth', 'role:ADMIN,SALES,AUDITOR'])->prefix('sales')->name('sales.')->group(function () {
     Route::get('/', [SalesManagementController::class, 'index'])->name('index');
+});
+
+Route::middleware(['auth', 'role:ADMIN,SALES'])->prefix('sales')->name('sales.')->group(function () {
     Route::post('/', [SalesManagementController::class, 'store'])->name('store');
     Route::put('/{sale}', [SalesManagementController::class, 'update'])->name('update');
     Route::post('/{sale}/void', [SalesManagementController::class, 'void'])->name('void');
@@ -54,19 +65,22 @@ Route::middleware(['auth', 'admin'])->prefix('users')->name('users.')->group(fun
     Route::delete('/{user}', [UserManagementController::class, 'destroy'])->name('destroy');
 });
 
-Route::middleware(['auth', 'admin'])->group(function () {
+Route::middleware(['auth', 'role:ADMIN,SALES,AUDITOR'])->group(function () {
     Route::get('/warehouses', function () {
         return Inertia::render('warehouses/index');
     })->name('warehouses.index');
 });
 
-Route::middleware(['auth', 'admin'])->prefix('api/warehouses')->name('api.warehouses.')->group(function () {
+Route::middleware(['auth', 'role:ADMIN,SALES,AUDITOR'])->prefix('api/warehouses')->name('api.warehouses.')->group(function () {
     Route::get('/', [WarehouseController::class, 'index'])->name('index');
-    Route::post('/', [WarehouseController::class, 'store'])->name('store');
     Route::get('/{warehouse}', [WarehouseController::class, 'show'])->name('show');
+    Route::get('/{warehouse}/stock', [WarehouseController::class, 'stock'])->name('stock');
+});
+
+Route::middleware(['auth', 'admin'])->prefix('api/warehouses')->name('api.warehouses.')->group(function () {
+    Route::post('/', [WarehouseController::class, 'store'])->name('store');
     Route::put('/{warehouse}', [WarehouseController::class, 'update'])->name('update');
     Route::delete('/{warehouse}', [WarehouseController::class, 'destroy'])->name('destroy');
-    Route::get('/{warehouse}/stock', [WarehouseController::class, 'stock'])->name('stock');
 });
 
 require __DIR__.'/settings.php';
