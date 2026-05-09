@@ -56,6 +56,12 @@ interface PurchasesPageProps {
         per_page: number;
         total: number;
     };
+    filters: {
+        search: string;
+        status: '' | 'POSTED' | 'VOIDED';
+        date: string;
+        date_order: 'asc' | 'desc';
+    };
     variantOptions: VariantOption[];
     warehouses: WarehouseOption[];
 }
@@ -99,10 +105,14 @@ const emptyRow = (): PurchaseItemFormRow => ({
     unit_cost: '',
 });
 
-export default function PurchasesIndex({ purchases, variantOptions, warehouses }: PurchasesPageProps) {
+export default function PurchasesIndex({ purchases, filters, variantOptions, warehouses }: PurchasesPageProps) {
     const { auth } = usePage<{ auth: { user: { role: 'ADMIN' | 'SALES' | 'AUDITOR' } } }>().props;
     const canManagePurchases = auth.user.role !== 'AUDITOR';
 
+    const [searchTerm, setSearchTerm] = useState(filters.search ?? '');
+    const [statusFilter, setStatusFilter] = useState<'' | 'POSTED' | 'VOIDED'>(filters.status ?? '');
+    const [dateFilter, setDateFilter] = useState(filters.date ?? '');
+    const [dateOrder, setDateOrder] = useState<'asc' | 'desc'>(filters.date_order ?? 'desc');
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [editingPurchase, setEditingPurchase] = useState<PurchaseRecord | null>(null);
     const [returningPurchase, setReturningPurchase] = useState<PurchaseRecord | null>(null);
@@ -260,6 +270,48 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
         });
     };
 
+    const applyFilters: FormEventHandler = (event) => {
+        event.preventDefault();
+
+        router.get(
+            route('purchases.index'),
+            {
+                search: searchTerm || undefined,
+                status: statusFilter || undefined,
+                date: dateFilter || undefined,
+                date_order: dateOrder,
+            },
+            { preserveScroll: true, preserveState: true, replace: true },
+        );
+    };
+
+    const resetFilters = () => {
+        setSearchTerm('');
+        setStatusFilter('');
+        setDateFilter('');
+        setDateOrder('desc');
+
+        router.get(route('purchases.index'), {}, { preserveScroll: true, preserveState: true, replace: true });
+    };
+
+    const goToPage = (targetPage: number) => {
+        if (targetPage < 1 || targetPage > purchases.last_page) {
+            return;
+        }
+
+        router.get(
+            route('purchases.index'),
+            {
+                page: targetPage,
+                search: filters.search || undefined,
+                status: filters.status || undefined,
+                date: filters.date || undefined,
+                date_order: filters.date_order,
+            },
+            { preserveScroll: true, preserveState: true, replace: true },
+        );
+    };
+
     const resultStart = purchases.total === 0 ? 0 : (purchases.current_page - 1) * purchases.per_page + 1;
     const resultEnd = Math.min(purchases.current_page * purchases.per_page, purchases.total);
 
@@ -285,6 +337,60 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                             </Button>
                         ) : null}
                     </div>
+
+                    <form onSubmit={applyFilters} className="mt-6 grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_auto_auto]">
+                        <div className="grid gap-2">
+                            <Label htmlFor="purchase-search">Search Supplier</Label>
+                            <Input
+                                id="purchase-search"
+                                placeholder="Search supplier"
+                                value={searchTerm}
+                                onChange={(event) => setSearchTerm(event.target.value)}
+                            />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="purchase-status">Status</Label>
+                            <Select
+                                value={statusFilter || '__all'}
+                                onValueChange={(value) => setStatusFilter(value === '__all' ? '' : (value as 'POSTED' | 'VOIDED'))}
+                            >
+                                <SelectTrigger id="purchase-status">
+                                    <SelectValue placeholder="All statuses" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="__all">All statuses</SelectItem>
+                                    <SelectItem value="POSTED">POSTED</SelectItem>
+                                    <SelectItem value="VOIDED">VOIDED</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="purchase-date">Date</Label>
+                            <Input id="purchase-date" type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="purchase-date-order">Date Order</Label>
+                            <Select value={dateOrder} onValueChange={(value) => setDateOrder(value as 'asc' | 'desc')}>
+                                <SelectTrigger id="purchase-date-order">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="desc">Newest first</SelectItem>
+                                    <SelectItem value="asc">Oldest first</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <Button type="submit" className="self-end">
+                            Apply
+                        </Button>
+                        <Button type="button" variant="outline" className="self-end" onClick={resetFilters}>
+                            Reset
+                        </Button>
+                    </form>
                 </div>
 
                 <div className="overflow-hidden rounded-xl border">
@@ -367,6 +473,25 @@ export default function PurchasesIndex({ purchases, variantOptions, warehouses }
                     <p className="text-muted-foreground text-sm">
                         Showing {resultStart}-{resultEnd} of {purchases.total}
                     </p>
+
+                    <div className="flex gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => goToPage(purchases.current_page - 1)}
+                            disabled={purchases.current_page <= 1}
+                        >
+                            Previous
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => goToPage(purchases.current_page + 1)}
+                            disabled={purchases.current_page >= purchases.last_page}
+                        >
+                            Next
+                        </Button>
+                    </div>
                 </div>
             </div>
 

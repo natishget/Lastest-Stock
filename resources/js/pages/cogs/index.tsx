@@ -156,6 +156,16 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
         };
     }, [rows]);
 
+    const downloadCsv = () => {
+        window.location.assign(
+            route('cogs.export-csv', {
+                start_date: startDate,
+                end_date: endDate,
+                costing_method: costingMethod,
+            }),
+        );
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="COGS" />
@@ -300,6 +310,9 @@ export default function CogsIndex({ activeMethod, methodOptions, defaultFilters 
                     </p>
 
                     <div className="flex gap-2">
+                        <Button type="button" variant="secondary" onClick={downloadCsv}>
+                            Download CSV
+                        </Button>
                         <Button
                             type="button"
                             variant="outline"

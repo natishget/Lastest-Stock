@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { LoaderCircle, Search } from 'lucide-react';
 import { FormEventHandler, useMemo, useState } from 'react';
 
@@ -209,6 +209,9 @@ export default function ProductManagementPage({ variants, filters, productOption
                                 <Button onClick={() => setIsCreateDialogOpen(true)}>Add Product</Button>
                                 <Button variant="secondary" onClick={() => setIsVariantDialogOpen(true)}>
                                     Add Product Variant
+                                </Button>
+                                <Button asChild variant="outline">
+                                    <Link href={route('products.import')}>Import JSON</Link>
                                 </Button>
                             </div>
                         ) : null}
