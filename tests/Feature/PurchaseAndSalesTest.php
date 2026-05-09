@@ -176,6 +176,70 @@ test('auditors can access purchase and sales screens but not mutate records', fu
     ])->assertForbidden();
 });
 
+test('purchase listing supports supplier search, status/date filter, and date ordering', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+    Purchase::query()->create([
+        'supplier_name' => 'Alpha Metals',
+        'invoice_number' => 'INV-100',
+        'purchase_date' => '2026-04-10',
+        'total_amount' => 100,
+        'status' => Purchase::STATUS_POSTED,
+        'created_by' => $admin->id,
+    ]);
+
+    Purchase::query()->create([
+        'supplier_name' => 'Bravo Supplies',
+        'invoice_number' => 'INV-101',
+        'purchase_date' => '2026-04-12',
+        'total_amount' => 120,
+        'status' => Purchase::STATUS_VOIDED,
+        'created_by' => $admin->id,
+    ]);
+
+    $filtered = $this->actingAs($admin)->get('/purchases?search=Bravo&status=VOIDED&date=2026-04-12&date_order=asc');
+
+    $filtered->assertOk();
+    $filtered->assertSee('Bravo Supplies');
+    $filtered->assertDontSee('Alpha Metals');
+
+    $ordered = $this->actingAs($admin)->get('/purchases?date_order=asc');
+
+    $ordered->assertOk();
+    $ordered->assertSeeInOrder(['2026-04-10', '2026-04-12']);
+});
+
+test('sales listing supports customer search, status/date filter, and date ordering', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+    Sale::query()->create([
+        'customer_name' => 'Alice Retail',
+        'sale_date' => '2026-05-10',
+        'total_amount' => 200,
+        'status' => Sale::STATUS_POSTED,
+        'created_by' => $admin->id,
+    ]);
+
+    Sale::query()->create([
+        'customer_name' => 'Beta Customer',
+        'sale_date' => '2026-05-12',
+        'total_amount' => 260,
+        'status' => Sale::STATUS_VOIDED,
+        'created_by' => $admin->id,
+    ]);
+
+    $filtered = $this->actingAs($admin)->get('/sales?search=Beta&status=VOIDED&date=2026-05-12&date_order=desc');
+
+    $filtered->assertOk();
+    $filtered->assertSee('Beta Customer');
+    $filtered->assertDontSee('Alice Retail');
+
+    $ordered = $this->actingAs($admin)->get('/sales?date_order=asc');
+
+    $ordered->assertOk();
+    $ordered->assertSeeInOrder(['2026-05-10', '2026-05-12']);
+});
+
 test('void sale creates reversal entries and restores stock layers', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
     $warehouse = Warehouse::query()->create([

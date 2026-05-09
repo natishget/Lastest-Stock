@@ -3,6 +3,7 @@
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('admin can view product management page', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
@@ -10,6 +11,15 @@ test('admin can view product management page', function () {
     $response = $this->actingAs($admin)->get('/products');
 
     $response->assertOk();
+});
+
+test('admin can view product json import page', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+    $response = $this->actingAs($admin)->get('/products/import');
+
+    $response->assertOk();
+    $response->assertInertia(fn (Assert $page) => $page->component('products/import'));
 });
 
 test('admin can see product variants individually on product management page', function () {
@@ -52,6 +62,14 @@ test('non admin users cannot access product management page', function () {
     $response->assertForbidden();
 });
 
+test('non admin users cannot access product json import page', function () {
+    $salesUser = User::factory()->create(['role' => User::ROLE_SALES]);
+
+    $response = $this->actingAs($salesUser)->get('/products/import');
+
+    $response->assertForbidden();
+});
+
 test('admin can create product', function () {
     $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
 
@@ -66,6 +84,46 @@ test('admin can create product', function () {
 
     expect($product)->not->toBeNull();
     expect($product?->base_unit)->toBe('Piece');
+});
+
+test('admin can import multiple products from validated json', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+    $response = $this->actingAs($admin)->post('/products/import', [
+        'products_json' => json_encode([
+            ['name' => 'Imported Fabric', 'unit' => 'Meter'],
+            ['name' => 'Imported Frame', 'unit' => 'Piece'],
+        ], JSON_THROW_ON_ERROR),
+    ]);
+
+    $response->assertRedirect(route('products.index'));
+    $response->assertSessionHasNoErrors();
+
+    expect(Product::query()->where('name', 'Imported Fabric')->exists())->toBeTrue();
+    expect(Product::query()->where('name', 'Imported Frame')->exists())->toBeTrue();
+});
+
+test('admin cannot import malformed or tampered json payloads', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+    $response = $this->actingAs($admin)->post('/products/import', [
+        'products_json' => json_encode([
+            ['name' => 'Unsafe Product', 'unit' => 'Piece', 'price' => 999],
+        ], JSON_THROW_ON_ERROR),
+    ]);
+
+    $response->assertSessionHasErrors('products_json');
+    expect(Product::query()->where('name', 'Unsafe Product')->exists())->toBeFalse();
+});
+
+test('admin cannot import invalid json text', function () {
+    $admin = User::factory()->create(['role' => User::ROLE_ADMIN]);
+
+    $response = $this->actingAs($admin)->post('/products/import', [
+        'products_json' => '{not valid json}',
+    ]);
+
+    $response->assertSessionHasErrors('products_json');
 });
 
 test('admin can update product', function () {
