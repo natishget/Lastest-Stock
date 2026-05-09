@@ -23,6 +23,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth', 'role:ADMIN,AUDITOR'])->group(function () {
     Route::get('cogs', [CogsController::class, 'index'])->name('cogs.index');
     Route::get('cogs/report', [CogsController::class, 'report'])->name('cogs.web-report');
+    Route::get('cogs/export-csv', [CogsController::class, 'exportCsv'])->name('cogs.export-csv');
 });
 
 Route::middleware(['auth', 'role:ADMIN,AUDITOR'])->prefix('products')->name('products.')->group(function () {
@@ -30,6 +31,8 @@ Route::middleware(['auth', 'role:ADMIN,AUDITOR'])->prefix('products')->name('pro
 });
 
 Route::middleware(['auth', 'admin'])->prefix('products')->name('products.')->group(function () {
+    Route::get('/import', [ProductManagementController::class, 'import'])->name('import');
+    Route::post('/import', [ProductManagementController::class, 'storeImport'])->name('import.store');
     Route::post('/', [ProductManagementController::class, 'store'])->name('store');
     Route::post('/variants', [ProductManagementController::class, 'storeVariant'])->name('variants.store');
     Route::put('/{product}', [ProductManagementController::class, 'update'])->name('update');

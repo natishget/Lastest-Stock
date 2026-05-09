@@ -34,9 +34,24 @@ class SalesManagementController extends Controller
     {
         $this->authorizeViewAccess($request);
 
+        $search = trim((string) $request->string('search')->toString());
+        $status = trim((string) $request->string('status')->toString());
+        $date = trim((string) $request->string('date')->toString());
+        $dateOrder = strtolower(trim((string) $request->string('date_order')->toString())) === 'asc' ? 'asc' : 'desc';
+
         $sales = Sale::query()
             ->with(['items.variant.product'])
-            ->latest('created_at')
+            ->when($search !== '', function ($query) use ($search): void {
+                $query->where('customer_name', 'like', "%{$search}%");
+            })
+            ->when($status !== '', function ($query) use ($status): void {
+                $query->where('status', $status);
+            })
+            ->when($date !== '', function ($query) use ($date): void {
+                $query->whereDate('sale_date', $date);
+            })
+            ->orderBy('sale_date', $dateOrder)
+            ->orderBy('created_at', 'desc')
             ->paginate(10)
             ->withQueryString()
             ->through(fn (Sale $sale): array => [
@@ -61,6 +76,12 @@ class SalesManagementController extends Controller
 
         return Inertia::render('sales/index', [
             'sales' => $sales,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+                'date' => $date,
+                'date_order' => $dateOrder,
+            ],
             'variantOptions' => $this->variantOptions(),
             'availableQuantities' => $this->availableQuantities(),
             'warehouses' => $this->warehouseOptions(),

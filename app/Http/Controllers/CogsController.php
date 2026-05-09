@@ -7,9 +7,11 @@ use App\Services\CostingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Response as ResponseFactory;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CogsController extends Controller
 {
@@ -50,6 +52,66 @@ class CogsController extends Controller
         );
 
         return response()->json($report);
+    }
+
+    public function exportCsv(Request $request): StreamedResponse
+    {
+        $validated = $request->validate([
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'costing_method' => ['nullable', 'string', Rule::in($this->costingService->methods())],
+        ]);
+
+        $startDate = Carbon::parse($validated['start_date']);
+        $endDate = Carbon::parse($validated['end_date']);
+        $method = $validated['costing_method'] ?? $this->costingService->resolveMethod();
+
+        $report = $this->costingService->report(
+            startDate: $startDate,
+            endDate: $endDate,
+            method: $method,
+            perPage: 1000,
+            page: 1,
+        );
+
+        $fileName = sprintf(
+            'cogs-%s-%s-%s.csv',
+            $method,
+            $startDate->toDateString(),
+            $endDate->toDateString(),
+        );
+
+        return ResponseFactory::streamDownload(function () use ($report): void {
+            $output = fopen('php://output', 'w');
+
+            fputcsv($output, [
+                'Product Name',
+                'Color',
+                'Origin',
+                'Quantity Sold',
+                'Revenue',
+                'COGS',
+                'Gross Profit',
+                'Profit Margin %',
+            ]);
+
+            foreach ($report->items() as $row) {
+                fputcsv($output, [
+                    data_get($row, 'product_name', ''),
+                    data_get($row, 'color', ''),
+                    data_get($row, 'origin', ''),
+                    data_get($row, 'quantity_sold', ''),
+                    data_get($row, 'revenue', ''),
+                    data_get($row, 'cogs', ''),
+                    data_get($row, 'gross_profit', ''),
+                    data_get($row, 'profit_margin', ''),
+                ]);
+            }
+
+            fclose($output);
+        }, $fileName, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     /**

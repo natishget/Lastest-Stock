@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Product\StoreProductImportRequest;
 use App\Http\Requests\Product\StoreProductRequest;
 use App\Http\Requests\Product\StoreProductVariantRequest;
 use App\Http\Requests\Product\UpdateProductRequest;
@@ -9,6 +10,8 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -92,11 +95,47 @@ class ProductManagementController extends Controller
         ]);
     }
 
+    public function import(): Response
+    {
+        return Inertia::render('products/import');
+    }
+
     public function store(StoreProductRequest $request): RedirectResponse
     {
         Product::query()->create($request->validated());
 
         return back()->with('success', 'Product created successfully.');
+    }
+
+    public function storeImport(StoreProductImportRequest $request): RedirectResponse
+    {
+        $products = $request->products();
+        $productNames = array_map(static fn (array $product): string => $product['name'], $products);
+        $existingNames = Product::query()
+            ->whereIn('name', $productNames)
+            ->pluck('name')
+            ->all();
+
+        if ($existingNames !== []) {
+            throw ValidationException::withMessages([
+                'products_json' => 'The JSON payload contains product names that already exist: '.implode(', ', $existingNames).'.',
+            ]);
+        }
+
+        DB::transaction(function () use ($products): void {
+            $now = now();
+
+            Product::query()->insert(array_map(static function (array $product) use ($now): array {
+                return [
+                    'id' => (string) Str::uuid(),
+                    'name' => $product['name'],
+                    'base_unit' => $product['base_unit'],
+                    'created_at' => $now,
+                ];
+            }, $products));
+        });
+
+        return redirect()->route('products.index')->with('success', count($products).' products imported successfully.');
     }
 
     public function update(UpdateProductRequest $request, Product $product): RedirectResponse

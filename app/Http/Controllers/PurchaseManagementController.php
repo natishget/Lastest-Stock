@@ -30,9 +30,24 @@ class PurchaseManagementController extends Controller
     {
         $this->authorizeViewAccess($request);
 
+        $search = trim((string) $request->string('search')->toString());
+        $status = trim((string) $request->string('status')->toString());
+        $date = trim((string) $request->string('date')->toString());
+        $dateOrder = strtolower(trim((string) $request->string('date_order')->toString())) === 'asc' ? 'asc' : 'desc';
+
         $purchases = Purchase::query()
             ->with(['items.variant.product'])
-            ->latest('created_at')
+            ->when($search !== '', function ($query) use ($search): void {
+                $query->where('supplier_name', 'like', "%{$search}%");
+            })
+            ->when($status !== '', function ($query) use ($status): void {
+                $query->where('status', $status);
+            })
+            ->when($date !== '', function ($query) use ($date): void {
+                $query->whereDate('purchase_date', $date);
+            })
+            ->orderBy('purchase_date', $dateOrder)
+            ->orderBy('created_at', 'desc')
             ->paginate(10)
             ->withQueryString()
             ->through(fn (Purchase $purchase): array => [
@@ -58,6 +73,12 @@ class PurchaseManagementController extends Controller
 
         return Inertia::render('purchases/index', [
             'purchases' => $purchases,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+                'date' => $date,
+                'date_order' => $dateOrder,
+            ],
             'variantOptions' => $this->variantOptions(),
             'warehouses' => $this->warehouseOptions(),
         ]);
