@@ -19,6 +19,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        config(['inertia.testing.page_paths' => [resource_path('js/pages')]]);
     }
 }
