@@ -1,0 +1,87 @@
+# Production Docker Compose Configuration
+# Designed for easy VPS deployment (e.g., Control Web Panel - CWP)
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    ports:
+      # Map host port 8080 to container port 80 (served by Nginx inside the container)
+      # You can change 8080 to any free port on your host machine.
+      # Control Web Panel (CWP) can then reverse-proxy domain traffic to this port.
+      - "8080:80"
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      LOG_CHANNEL: single
+      LOG_LEVEL: warning
+      
+      # Database connection configuration
+      # 1. To use the containerized PostgreSQL service (below), keep these values:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      
+      # 2. To use a database managed by CWP on the host server instead:
+      # - Set DB_HOST to your host server's local IP (or use host.docker.internal if configured)
+      # - Set DB_CONNECTION to mysql, mariadb, or pgsql depending on what you use in CWP
+      # - Set DB_PORT to 3306 (MySQL/MariaDB) or 5432 (PostgreSQL)
+      # - Remove/comment out the "depends_on" section below to avoid launching the postgres container
+      # DB_CONNECTION: mysql
+      # DB_HOST: 172.17.0.1  # Default docker bridge gateway IP pointing to the host
+      # DB_PORT: 3306
+      # DB_DATABASE: host_database_name
+      # DB_USERNAME: host_database_user
+      # DB_PASSWORD: host_database_password
+
+    # Remove or comment out this depends_on block if you use an external CWP host database
+    depends_on:
+      postgres:
+        condition: service_healthy
+        
+    networks:
+      - app-network
+      
+    healthcheck:
+      # Checks health directly against the internal Nginx proxy endpoint
+      test: ["CMD", "curl", "-f", "http://localhost/up"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Containerized PostgreSQL Database Service
+  # Comment out/remove this service if you prefer to use CWP host-managed MariaDB/MySQL/PostgreSQL
+  postgres:
+    image: postgres:18-alpine
+    container_name: stock-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
